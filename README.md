@@ -1,2 +1,0 @@
-# cann-recipes-train
-
