@@ -1,4 +1,9 @@
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
+# Adapted from
+# https://github.com/volcengine/verl/blob/main/verl/models/mcore/model_forward.py
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+# Copyright 2025 Bytedance Ltd. and/or its affiliates
+# Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +17,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Copyright 2025 Bytedance Ltd. and/or its affiliates
 import torch
 
 from verl.utils.megatron_utils import unwrap_model
@@ -63,7 +67,6 @@ def gptmodel_forward(
             input_ids=input_ids_rmpad,
             attention_mask=None,
             position_ids=position_ids,
-            packed_seq_params=packed_seq_params,
         )
         if post_process and logits_processor is not None:
             args = {k: preprocess_packed_seqs(v, attention_mask, pre_process=True)[0] for k, v in logits_processor_args.items()}

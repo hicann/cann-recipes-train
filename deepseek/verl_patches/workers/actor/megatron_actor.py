@@ -1,17 +1,6 @@
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+# Adapted from 
+# https://github.com/volcengine/verl/blob/main/verl/workers/actor/megatron_actor.py
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,6 +40,7 @@ from verl.utils.megatron.pipeline_parallel import make_batch_generator
 from verl.utils.megatron.tensor_parallel import vocab_parallel_entropy, vocab_parallel_log_probs_from_logits
 from verl.utils.py_functional import append_to_dict
 from verl.utils.torch_functional import broadcast_dict_tensor, split_dict_tensor_into_batches
+from verl.utils.seqlen_balancing import rearrange_micro_batches
 from verl.workers.actor.megatron_actor import MegatronPPOActor
 
 from verl_patches.profiler import NPUProfiler
@@ -92,6 +82,9 @@ def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Te
     def compute_logprobs_fn(output, data):
         response = data["responses"]
         response_length = response.size(1)
+        if self.config.use_packed_seq:
+            log_probs = output["log_probs"][:, -response_length - 1: -1].contiguous()
+            return {"log_probs": log_probs}
         logits = output
         logits = logits[:, -response_length - 1: -1].contiguous()
         log_probs = vocab_parallel_log_probs_from_logits(logits, response)
@@ -108,7 +101,8 @@ def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Te
         response = batch["responses"]
         response_length = response.size(1)
         with torch.no_grad():
-            output = self.forward_backward_batch(data, forward_only=True, post_process_fn=compute_logprobs_fn, calculate_entropy=calculate_entropy)
+            output = self.forward_backward_batch(data, forward_only=True,
+                post_process_fn=compute_logprobs_fn, calculate_entropy=calculate_entropy)
             if mpu.is_pipeline_last_stage(ignore_virtual=True):
                 # only on last rank. It should be on every tp rank
                 if calculate_entropy:
@@ -186,8 +180,6 @@ def make_minibatch_iterator(self, data: DataProto) -> Iterable[DataProto]:
 
 def forward_backward_batch(self, data: DataProto, forward_only=False, post_process_fn=None, calculate_entropy=False):
     """
-    for not packed sequences
-
     We assume:
     - The model takes input: (input_ids, attention_mask, position_ids). No rmpad for the input
     - The communication shape is (total_nnz_pad_to_sp // tp_size, 1, hidden_size) if sequence parallel is enabled
@@ -201,7 +193,10 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
         batch_size = data.meta_info["micro_batch_size"]
     else:
         batch_size = self.config.ppo_micro_batch_size_per_gpu
-    batches = split_dict_tensor_into_batches(data.batch, batch_size=batch_size)
+    if self.config.use_dynamic_bsz:
+        batches, _ = rearrange_micro_batches(batch=data.batch, max_token_len=self.config.max_packing_token_size)
+    else:
+        batches = split_dict_tensor_into_batches(data.batch, batch_size=batch_size)
     # compute input shapes for pp stages
     n_micro_batch = len(batches)
     seq_len = batches[0]["input_ids"].shape[1]
@@ -212,6 +207,10 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
         # For memory efficiency
         # We move calculation of entropy to compute_log_probs, forward_only == True
         metrics = {}
+        if self.config.use_packed_seq:
+            device_type = output["log_probs"].device
+        else:
+            device_type = output.device
         if forward_only:
             if post_process_fn is None:
                 metrics["logits"] = output
@@ -219,7 +218,7 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
                 stats = post_process_fn(output, data)
                 metrics.update(stats)
             if not calculate_entropy:
-                return torch.tensor(1.0, device=output.device), metrics
+                return torch.tensor(1.0, device=device_type), metrics
 
         responses = data["responses"]
         response_length = responses.size(1)
@@ -228,9 +227,9 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
         loss_agg_mode = self.config.loss_agg_mode
 
         # compute policy loss
-        logits = output
-        logits = logits[:, -response_length - 1: -1].contiguous()
         ret_entropy = None
+        if not self.config.use_packed_seq:
+            logits = output[:, -response_length - 1: -1].contiguous()
         if not forward_only:
             advantages = data["advantages"]
 
@@ -238,7 +237,10 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
             clip_ratio_low = self.config.clip_ratio_low if self.config.clip_ratio_low is not None else clip_ratio
             clip_ratio_high = self.config.clip_ratio_high if self.config.clip_ratio_high is not None else clip_ratio
             clip_ratio_c = meta_info["clip_ratio_c"]
-            log_prob = vocab_parallel_log_probs_from_logits(logits, responses)
+            if self.config.use_packed_seq:
+                log_prob = output["log_probs"][:, -response_length - 1: -1].contiguous()
+            else:
+                log_prob = vocab_parallel_log_probs_from_logits(logits, responses)
             if self.config.recompute_old_log_prob:
                 old_log_prob = data["old_log_probs"]
             else:
@@ -256,7 +258,10 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
             )
             policy_loss = pg_loss
         if calculate_entropy:
-            entropy = vocab_parallel_entropy(logits)
+            if self.config.use_packed_seq:
+                entropy = output["entropy"][:, -response_length - 1: -1].contiguous()
+            else:
+                entropy = vocab_parallel_entropy(logits)
             if not forward_only:
                 entropy_loss = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
                 entropy_coeff = meta_info["entropy_coeff"]
@@ -266,7 +271,7 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
 
         stats = {}
         if forward_only:
-            policy_loss = torch.tensor(1.0, device=output.device)
+            policy_loss = torch.tensor(1.0, device=device_type)
         else:
             if self.config.use_kl_loss:
                 ref_log_prob = data["ref_log_prob"]
@@ -287,6 +292,8 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
                 }
             )
         append_to_dict(metrics, stats)
+        if self.config.use_dynamic_bsz and not forward_only:
+            policy_loss = policy_loss * (len(data) / self.config.ppo_mini_batch_size)
         return policy_loss, [metrics, ret_entropy]
 
     def forward_step(batch_iter, model):
@@ -299,8 +306,41 @@ def forward_backward_batch(self, data: DataProto, forward_only=False, post_proce
 
         forward_fn = get_mcore_forward_fn(self.hf_config)
 
-        output = forward_fn(model, input_ids, attention_mask, position_ids, sequence_parallel=self.tf_config.sequence_parallel)
+        if not self.config.use_packed_seq:
+            output = forward_fn(model, input_ids, attention_mask, position_ids, pack_seqs=self.config.use_packed_seq,
+                sequence_parallel=self.tf_config.sequence_parallel)
+        else:
+            responses = batch["responses"]
+            response_length = responses.size(1)
+            label = position_ids.clone().detach()
+            label[:, -response_length - 1 : -1] = responses
+            label_mask = attention_mask.clone().detach()
+            label_mask[:, : -response_length - 1] = False
+            label_mask[:, -1] = False
 
+            def logits_processor(logits, label, label_mask):
+                assert logits.shape[:2] == label.shape[:2]
+                assert label.shape == label_mask.shape
+
+                ret = {}
+
+                if calculate_entropy:
+                    entropy = vocab_parallel_entropy(logits)
+                    ret["entropy"] = entropy
+                log_probs = vocab_parallel_log_probs_from_logits(logits, label)
+                log_probs = log_probs.masked_fill(~label_mask, 0.0)
+                ret["log_probs"] = log_probs
+                return ret
+
+            logits_processor_args = {"label": label, "label_mask": label_mask}
+
+            from verl.models.mcore import get_mcore_forward_fn
+
+            forward_fn = get_mcore_forward_fn(self.hf_config)
+
+            output = forward_fn(model, input_ids, attention_mask, position_ids,
+                sequence_parallel=self.tf_config.sequence_parallel, pack_seqs=self.config.use_packed_seq,
+                logits_processor=logits_processor, logits_processor_args=logits_processor_args)
         if forward_only:
             meta_info = None
         else:

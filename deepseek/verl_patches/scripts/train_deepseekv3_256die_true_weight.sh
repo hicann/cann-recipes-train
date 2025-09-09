@@ -55,6 +55,7 @@ export ASCEND_GLOBAL_LOG_LEVEL=3      # log level: 3: ERROR  2:EVENT  1:INFO   0
 export HCCL_CONNECT_TIMEOUT=600
 export HCCL_EXEC_TIMEOUT=600
 export HCCL_IF_BASE_PORT=64247
+export HCCL_HOST_SOCKET_PORT_RANGE="auto"
 
 export PRINT_MEMORY=1                 # print the existing records at each stage to assist in locating OOM issues
 

@@ -1,22 +1,17 @@
 # coding=utf-8
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+# This file is a part of the CANN Open Software.
+# Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the license.
 
 import sys
 
 from verl_patches.tools import insert_patch
 from megatron.core.transformer import TransformerConfig
+from megatron.core.tensor_parallel.cross_entropy import VocabParallelCrossEntropy
 
 
 def get_gpt_decoder_block_spec(tfconfig: TransformerConfig, use_transformer_engine: bool = False):
@@ -34,9 +29,21 @@ def mcore_models_adaptation():
     from verl_patches.models.mcore.config_converter import MLATransformerConfig, hf_to_mcore_config_dpskv3
     setattr(sys.modules['megatron.core.transformer'], 'MLATransformerConfig', MLATransformerConfig)
 
+    from megatron_patches.core.tensor_parallel.cross_entropy import calculate_logits_max
+    VocabParallelCrossEntropy.calculate_logits_max = calculate_logits_max
+
     import megatron.core.models.gpt.gpt_layer_specs as original_specs
     original_specs.get_gpt_decoder_block_spec = get_gpt_decoder_block_spec
     sys.modules['megatron.core.models.gpt.gpt_layer_specs.get_gpt_decoder_block_spec'] = get_gpt_decoder_block_spec
+
+    from megatron_patches.core.packed_seq_params import PackedSeqParams
+    from megatron.core import packed_seq_params
+    packed_seq_params.PackedSeqParams = PackedSeqParams
+
+    from mindspeed_patches.core.tensor_parallel.cross_entropy import calculate_predicted_logits
+    import mindspeed.core.tensor_parallel.cross_entropy as original_cross_entropy
+    original_cross_entropy.calculate_predicted_logits = calculate_predicted_logits
+    sys.modules['mindspeed.core.tensor_parallel.cross_entropy.calculate_predicted_logits'] = calculate_predicted_logits
 
     # config_converter
     from verl.models.mcore import config_converter
@@ -45,6 +52,10 @@ def mcore_models_adaptation():
     from verl.models.mcore import registry
     SupportedModel = registry.SupportedModel
     registry.MODEL_CONFIG_CONVERTER_REGISTRY[SupportedModel.DEEPSEEK_V3] = config_converter.hf_to_mcore_config_dpskv3
+
+    from verl.models.mcore import util
+    from verl_patches.models.mcore.util import postprocess_packed_seqs
+    util.postprocess_packed_seqs = postprocess_packed_seqs
 
     # model_forward
     from verl.models.mcore import model_forward
@@ -91,6 +102,10 @@ def verl_utils_adaptation():
     from verl_patches.utils import megatron_utils as megatron_utils_patch
     import verl.utils.megatron_utils as megatron_utils_original
     insert_patch(megatron_utils_patch, megatron_utils_original)
+
+    from verl_patches import protocol as protocol_patch
+    import verl.protocol as protocol_original
+    insert_patch(protocol_patch, protocol_original)
 
 
 def verl_workers_adaptation():

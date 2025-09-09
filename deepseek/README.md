@@ -53,12 +53,9 @@ cp -r vllm ../cann-recipes/training/rl/deepseekv3/
 cd ..
 
 # vLLM-Ascend
-git clone -b main https://github.com/vllm-project/vllm-ascend.git
+git clone -b v0.9.1rc2 https://github.com/vllm-project/vllm-ascend.git
 cd vllm-ascend
-git checkout e1d282d7cc017f7e8075074a6981532045801a73   # v0.9.1-dev branch
-git fetch origin pull/1474/head && git merge FETCH_HEAD # 拉取额外优化代码
-git fetch origin pull/2058/head && git merge FETCH_HEAD # 拉取额外优化代码
-cp -r vllm-ascend ../cann-recipes/training/rl/deepseekv3/
+cp -r vllm_ascend ../cann-recipes/training/rl/deepseekv3/
 cd ..
 
 # Megatron-LM
@@ -98,5 +95,12 @@ from verl_atches import prelude_patch
 ## 执行RL后训练
 ```shell
 # 本sample目录下启动DeepSeekV3的RL后训练
-bash ./verl_patches/scripts/train_deepseekv3_256die_random_init.sh # 基于随机权重的训练脚本 
+bash ./verl_patches/scripts/train_deepseekv3_256die_random_init.sh # 基于随机权重的训练脚本
+bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh # 基于真实权重的训练脚本 
 ```
+
+## 性能数据
+基于Atlas 900 A3 SuperPoD超节点128卡集群，加载真实权重，Prefill/Decode阶段长度分别为1K与3K，系统吞吐达到120tps/卡。
+| 模型                  | 机器型号     | GBS | n_samples | max_prompt_length | max_tokens | 端到端 tps | 
+|---------------------|----------|-----|-----------|-------------------|------------|---------| 
+| DeepSeek-R1-671B    | Atlas 900 A3 SuperPoD | 512 | 16        | 1024              | 3072       | 120     |
