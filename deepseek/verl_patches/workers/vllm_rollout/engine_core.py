@@ -1,4 +1,7 @@
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
+# Adapted from 
+# https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

@@ -1,5 +1,7 @@
-# coding=utf-8
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
+# Adapted from 
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/utils/model.py
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+# Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

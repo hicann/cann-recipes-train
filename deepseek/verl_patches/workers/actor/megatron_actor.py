@@ -1,5 +1,5 @@
 # Adapted from 
-# https://github.com/volcengine/verl/blob/main/verl/workers/actor/megatron_actor.py
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/workers/actor/megatron_actor.py
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
