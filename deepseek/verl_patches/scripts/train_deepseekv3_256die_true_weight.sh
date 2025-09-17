@@ -12,6 +12,7 @@ ray stop --force
 
 cp ./verl_patches/trainer/config/ppo_mindspeed_trainer.yaml ./verl/trainer/config/
 cp ./verl_patches/trainer/main_ppo_npu.py ./verl/trainer/
+cp ./verl_patches/utils/reward/__init__.py ./verl/utils/reward/
 
 export RAY_DEDUP_LOGS=0            # 0: disable ray's log folding 1: enable ray's log folding
 export HYDRA_FULL_ERROR=1          # display the accurate error stack

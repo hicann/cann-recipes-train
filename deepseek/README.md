@@ -41,7 +41,6 @@ git clone https://gitee.com/ascend/cann-recipes.git
 git clone https://github.com/volcengine/verl.git    # 从github下载，请确保网络能访问
 cd verl
 git checkout 54c9b7364c2d188b2ba4107404cfa3c2b446df19
-git fetch origin pull/3054/head && git merge FETCH_HEAD
 cp -r verl ../cann-recipes/training/rl/deepseekv3/
 cd ..
 
