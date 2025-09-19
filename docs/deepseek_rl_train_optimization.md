@@ -4,16 +4,16 @@
 
 ### 背景
 
-DeepSeek-R1发布后，大模型的RL训练得到了广泛的关注，各大厂商以及开源社区都进行了大量的RL训练实践，致力于构建更高效的RL训练系统。本文基于字节开源的veRL框架，搭配MindSpeed与vllm-ascend框架，经过深度优化与适配，在Atlas 900 A3 SuperPoD超节点上实现了高吞吐性能。
+DeepSeek-R1发布后，大模型的RL训练得到了广泛的关注，各大厂商以及开源社区都进行了大量的RL训练实践，致力于构建更高效的RL训练系统。本文基于开源veRL框架，搭配MindSpeed与vllm-ascend框架，经过深度优化与适配，在Atlas 900 A3 SuperPoD超节点上实现了高吞吐性能。
 
 本文中涉及的开源框架如下表所示。
 
 | **框架名称**  | **介绍**  |
 | ----- | ---- |
-| [veRL](https://github.com/volcengine/verl) | 字节跳动开源的​​LLM强化学习框架​​，结合单控制器（控制流）与多控制器（计算流）优势，简化了RL算法（如PPO、GRPO）实现。<br>其训练支持FSDP、FSDP2与Megatron-LM，推理支持vLLM、SGLang与HFTransformers。     |
+| [veRL](https://github.com/volcengine/verl) | 开源​​LLM强化学习框架​​，结合单控制器（控制流）与多控制器（计算流）优势，简化了RL算法（如PPO、GRPO）实现。<br>其训练支持FSDP、FSDP2与Megatron-LM，推理支持vLLM、SGLang与HFTransformers。     |
 | [vLLM](https://github.com/vllm-project/vllm) | 为大语言模型提供高吞吐量和内存高效推理服务的开源引擎，使用PagedAttention技术高效实现KVcache的内存管理，并支持众推理特性。      |
 | [vLLM-Ascend](https://github.com/vllm-project/vllm-ascend) | vLLM的​​昇腾NPU适配插件，支持NPU上的诸多优化。本实践过程中的一些优化贡献到了该开源仓。  |
-| [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | NVIDIA开发的​​超大规模语言模型训练框架，支持多种分布式并行策略​​。                            |
+| [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | ​超大规模语言模型训练框架，支持多种分布式并行策略​​。                            |
 | [MindSpeed](https://gitee.com/ascend/MindSpeed) <br> [MindSpeed-LLM](https://gitee.com/ascend/MindSpeed-LLM) |  MindSpeed：针对NPU的大模型训练加速库，提供Megatron-LM框架对NPU的基本功能适配以及一些亲和NPU的优化特性。<br> MindSpeed-LLM：基于昇腾生态的大语言模型分布式训练框架，支持分布式预训练、分布式指令微调，并提供了对应的开发工具链。依赖Megatron-LM与MindSpeed。|
 | [MindSpeed-RL](https://gitee.com/ascend/MindSpeed-RL) | 基于昇腾生态的强化学习加速框架，本优化实践对其进行了一些借鉴参考。 |
 
@@ -61,7 +61,7 @@ vLLM Ascend通过​**​**硬件插件化机制​​解耦了框架与硬件�
 - 训练引擎：完整适配了Megatron-LM、MindSpeed与MindSpeed-LLM，以获得较好的NPU训练性能。
 
 - 模型支持：本实践使用的veRL版本尚未完全支持DeepSeek R1模型训练，需要开发适配。
-  
+
 - 推理引擎：vLLM Ascend暂未支持多机场景的sleep特性，需要手动实现offload与onload、init\_cache与free\_cache。
 
 本实践在如下四个方面对veRL进行了性能优化：
@@ -229,7 +229,7 @@ config_dict['use_fused_rotary_pos_emb'] = True
 additional_config={
     "torchair_graph_config": {
         "enabled": VLLM_ENABLE_GRAPH_MODE,    #  使能图模式
-        "use_cached_graph": False,            
+        "use_cached_graph": False,
         "graph_batch_sizes_init": False,
         "graph_batch_sizes": [max_num_seqs],  #  配置图模式中每个DP rank的batch size
         "enable_multistream_mla": True,       #  图模式中，使能MLA多流，将MLA的vector操作放到另一个流中。
@@ -240,7 +240,7 @@ additional_config={
     "ascend_scheduler_config": {
         "enabled": True,                      #  使用vllm ascend的scheduler
     },
-    "refresh": True  
+    "refresh": True
 },
 
 ```
@@ -299,7 +299,7 @@ additional_config={
 这里已经可以断定veRL训练侧性能差是因为任务下发存在显著时间差，可能与veRL控制器逻辑有关。根据"verl/single\_controller/ray/base.py"中的func\_generator函数所示，veRL在CPU侧主进程中调用一个任务接口后，实际执行如下所示的3个步骤：
 
 - dispatch\_fn：主进程将持有的任务输入数据在batch维度按照任务DP size划分为多份。
-  
+
 - execute\_fn：主进程给每个worker进程下发任务。
 
 - collect\_fn：主进程收集每个worker的输出结果，并在batch维度拼接成一份完整结果。
