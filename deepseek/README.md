@@ -35,33 +35,33 @@ pip3 install -r requirements.txt
 3、准备源码，为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他代码需要使用以下命令从各自框架拉取
 ```shell
 # 本sample所在代码仓
-git clone https://gitee.com/ascend/cann-recipes.git
+git clone https://gitcode.com/cann/cann_recipes_train.git
 
 # veRL框架
 git clone https://github.com/volcengine/verl.git    # 从github下载，请确保网络能访问
 cd verl
 git checkout 54c9b7364c2d188b2ba4107404cfa3c2b446df19
-cp -r verl ../cann-recipes/training/rl/deepseekv3/
+cp -r verl ../cann_recipes_train/deepseek/
 cd ..
 
 # vLLM
 git clone https://github.com/vllm-project/vllm.git
 cd vllm
 git checkout v0.9.1 
-cp -r vllm ../cann-recipes/training/rl/deepseekv3/
+cp -r vllm ../cann_recipes_train/deepseek/
 cd ..
 
 # vLLM-Ascend
 git clone -b v0.9.1rc2 https://github.com/vllm-project/vllm-ascend.git
 cd vllm-ascend
-cp -r vllm_ascend ../cann-recipes/training/rl/deepseekv3/
+cp -r vllm_ascend ../cann_recipes_train/deepseek/
 cd ..
 
 # Megatron-LM
 git clone https://github.com/NVIDIA/Megatron-LM.git # 从github下载，请确保网络能访问  
 cd Megatron-LM
 git checkout core_r0.8.0
-cp -r megatron ../cann-recipes/training/rl/deepseekv3/
+cp -r megatron ../cann_recipes_train/deepseek/
 cd ..
 
 # MindSpeed
@@ -69,14 +69,14 @@ git clone https://gitee.com/ascend/MindSpeed.git
 cd MindSpeed
 git checkout v2.0.0_core_r0.8.0     # 参考MindSpeed-LLM依赖版本
 pip install -r requirements.txt 
-cp -r mindspeed ../cann-recipes/training/rl/deepseekv3/
+cp -r mindspeed ../cann_recipes_train/deepseek/
 cd ..
 
 # MindSpeed-LLM
 git clone https://gitee.com/ascend/MindSpeed-LLM.git
 cd MindSpeed-LLM
 git checkout v2.0.0
-cp -r mindspeed_llm ../cann-recipes/training/rl/deepseekv3/
+cp -r mindspeed_llm ../cann_recipes_train/deepseek/
 cd ..
 ```
 
