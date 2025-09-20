@@ -1,38 +1,35 @@
-# 简介
-cann-recipes-train仓库旨在针对LLM/多模态模型训练业务中的典型算法、模型，提供基于昇腾CANN平台的优化样例，方便开发者简单、快速、高效地使用CANN平台进行模型训练
+# cann-recipes-train
 
-# Latest News 📣
-- [Aug 20, 2025]: 🚀  支持DeepSeek-R1模型
+## 🚀Latest News
+- [2025/09] DeepSeek-R1、Qwen2.5模型样例首次上线。
 
-# 已支持的算法
+## 🎉概述
+cann-recipes-train仓库旨在针对LLM与多模态模型训练业务中的典型模型、算法，提供基于CANN平台的优化样例，方便开发者简单、快速、高效地使用CANN平台进行模型训练。
 
-|模型|简介|
+
+
+## ✨实践列表
+
+|实践|简介|
 |-----|-----|
-|[DeepSeek-V3](deepseek/README.md) |基于开源veRL框架，搭配MindSpeed+vllm-ascend框架，在Atlas A3 SuperPoD超节点实现GRPO算法的高吞吐RL训练。 |
+|[DeepSeek-V3 RL训练优化](deepseek/README.md) |基于开源veRL框架，搭配MindSpeed+vLLM-Ascend框架，在Atlas A3 SuperPoD超节点实现GRPO算法的高吞吐RL训练，并达到120TPS/卡的系统吞吐量。|
+|[基于verl框架的Qwen2.5强化学习（入门样例）](qwen2_5/verl_npu_demo/README.md) |基于Qwen2.5-1.5B-Instruct模型，采用verl强化学习框架，在MATH-lighteval数学推理数据集上进行了训练。本样例只需要单卡Atlas A2环境，帮助大家快速上手，使用昇腾NPU完成RL训练任务。|
 
-# 版本配套
+## 📖目录结构说明
 
-- **CANN：8.2.RC1**
-
-  本代码仓的编译执行依赖CANN开发套件包（cann-toolkit）与CANN二进制算子包（cann-kernels）。
-  - 安装CANN软件前，请确保已安装配套版本的驱动固件。
-  - 驱动固件以及CANN软件的安装方法请参见配套版本的[CANN软件安装手册](https://hiascend.com/document/redirect/CannCommunityInstSoftware)。
-
-- **Ascend Extension for PyTorch：7.1.0**
-
-  Ascend Extension for PyTorch（torch_npu）为支撑PyTorch框架运行在NPU上的适配插件，本代码仓支持的Ascend Extension for PyTorch版本为`7.1.0`，但各样例依赖的PyTorch版本有所不同，请根据各样例的`README.md`选择适配的PyTorch版本。
-
-  Ascend Extension for PyTorch的安装方法请参见[Ascend Extension for PyTorch](https://gitee.com/ascend/pytorch#安装)。
-
-
-# License
-[CANN Open Software License Agreement Version 2.0](./LICENSE)
-
-# 免责声明
-## 致cann-recipes-train使用者
-1. cann-recipes-train提供的模型实现样例，仅供使用者参考，不可用于商业目的。
-2. 如您在使用cann-recipes-train过程中，发现任何问题（包括但不限于功能问题、合规问题），请在GitCode提交issue，我们将及时审视并解决。
+```
+├── deepseek                           # DeepSeek RL训练相关代码
+├── qwen2.5                            
+│  ├── verl_npu_demo                   # Qwen2.5强化学习训练相关代码
+├── docs                               # 优化技术介绍文档
+└── CONTRIBUTION.md
+└── README.md
+└── ...
+```
 
 
-## 致数据集所有者
-如果您不希望您的数据集在cann-recipes-train仓的模型样例中被提及，或希望更新模型样例中关于您的数据集描述，请在GitCode提交issue，我们将根据您的issue要求删除或更新您的数据集描述。衷心感谢您对cann-recipes-train的理解和贡献。
+## 📝相关信息
+
+- [贡献指南](./CONTRIBUTION.md)
+- [许可证](./LICENSE)
+- [免责声明](DISCLAIMER.md)
