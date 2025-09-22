@@ -9,6 +9,7 @@
 
 #!/bin/bash
 container_name=$1
+image_name=$2
 
 # create
 docker run -itd \
@@ -42,7 +43,7 @@ docker run -itd \
 --device=/dev/hisi_hdc \
 --net=host \
 --name ${container_name} \
---privileged quay.io/ascend/vllm-ascend:v0.9.1-dev-openeuler /bin/bash
+--privileged ${image_name} /bin/bash
 
 # execute
 docker exec -it -u root ${container_name} bash
