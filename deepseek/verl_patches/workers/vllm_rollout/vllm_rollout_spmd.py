@@ -122,11 +122,11 @@ def __init__(self, model_path: str, config: DictConfig, tokenizer, model_hf_conf
                 "enable_multistream_mla": True,
                 "enable_multistream_moe": True,
                 "enable_view_optimize": False,
-                "enable_kv_nz": True,
+                "enable_kv_nz": False,
             },
             "ascend_scheduler_config": {
                 "enabled": True,
-                "chunked_prefill_enabled": False,
+                "enable_chunked_prefill": False,
             },
             "refresh": True,
         },

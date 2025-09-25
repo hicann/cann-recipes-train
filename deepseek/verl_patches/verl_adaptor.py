@@ -103,10 +103,6 @@ def verl_utils_adaptation():
     import verl.utils.megatron_utils as megatron_utils_original
     insert_patch(megatron_utils_patch, megatron_utils_original)
 
-    from verl_patches import protocol as protocol_patch
-    import verl.protocol as protocol_original
-    insert_patch(protocol_patch, protocol_original)
-
 
 def verl_workers_adaptation():
     from verl_patches.workers.vllm_rollout import vllm_rollout_spmd

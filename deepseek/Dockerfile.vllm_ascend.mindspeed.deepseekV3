@@ -28,7 +28,7 @@ WORKDIR /workspace
 RUN pip config set global.index-url ${PIP_INDEX_URL}
 
 # Install torch and torch-npu
-python3 -m pip install torch==2.5.1 torch-npu==2.5.1.post1
+RUN python3 -m pip install torch==2.5.1 torch-npu==2.5.1.post1
 
 # Compile/Install apex
 RUN source /usr/local/Ascend/ascend-toolkit/set_env.sh && \

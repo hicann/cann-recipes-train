@@ -14,10 +14,11 @@ cp ./verl_patches/trainer/config/ppo_mindspeed_trainer.yaml ./verl/trainer/confi
 cp ./verl_patches/trainer/main_ppo_npu.py ./verl/trainer/
 cp ./verl_patches/utils/reward/__init__.py ./verl/utils/reward/
 
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source /usr/local/Ascend/nnal/atb/set_env.sh
+
 export RAY_DEDUP_LOGS=0            # 0: disable ray's log folding 1: enable ray's log folding
 export HYDRA_FULL_ERROR=1          # display the accurate error stack
-
-SOCKET_IFNAME="Your SOCKET IFNAME"
 
 ulimit -n 32768
 mkdir logs
@@ -26,7 +27,6 @@ export HCCL_IF_BASE_PORT=24703
 export LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
 export MALLOC_MMAP_THRESHOLD_=512768
 export LCAL_COMM_ID=127.0.0.1:27001
-
 
 NNODES=16                          # number of nodes
 NPUS_PER_NODE=16                   # the number of npus for each node
@@ -78,7 +78,7 @@ export HCCL_BUFFSIZE=300                        # the buffer size of HCCL
 
 if [ "$MASTER_ADDR" = "$CURRENT_IP" ]; then
   # the master node starts
-  ray start --head --port 6766 --dashboard-host=0.0.0.0 --node-ip-address=$CURRENT_IP --dashboard-port=8260 --resources='{"NPU": '$NPUS_PER_NODE'}'
+  ray start --head --port $MASTER_PORT --dashboard-host=0.0.0.0 --node-ip-address=$CURRENT_IP --dashboard-port=8260 --resources='{"NPU": '$NPUS_PER_NODE'}'
 
   while true; do
       ray_status_output=$(ray status)
@@ -101,7 +101,7 @@ else
   # the child node attempts to register ray with the master node until successful
   while true; do
       # try to connect to the Ray cluster
-      ray start --address="$MASTER_ADDR:6766" --resources='{"NPU": '$NPUS_PER_NODE'}' --node-ip-address=$CURRENT_IP
+      ray start --address="$MASTER_ADDR:$MASTER_PORT" --resources='{"NPU": '$NPUS_PER_NODE'}' --node-ip-address=$CURRENT_IP
 
       # check if the connection is successful
       ray status

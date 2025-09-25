@@ -4,81 +4,187 @@
 
 本样例针对DeepSeek-V3模型，基于[verl开源框架](https://github.com/volcengine/verl)，配合MindSpeed-LLM和vLLM-Ascend框架，完成RL训练全流程的优化适配。
 
+本样例采用的优化点介绍可参见[基于veRL前端&A3集群的DeepSeekR1模型RL训练优化实践](../docs/deepseek_rl_train_optimization.md)。
+
+## 支持的产品型号
+Atlas A3系列产品
+
 ## 基于Dockerfile构建环境
 > 环境搭建可以基于Dockerfile快速实现，我们已经在Dockerfile里配置了必要的昇腾软件和其他第三方软件的依赖。如果遇到网络不通等问题，也可以参考附录中的[手动准备环境](#手动准备环境)章节。
 
-1. 基于Dockerfile创建镜像
-   ```shell
-   # 创建docker image，请传入镜像名称，如your_image_name
+1. 基于Dockerfile创建镜像。
+   ```bash
+   # 请预先下载本样例提供的Dockerfile文件：Dockerfile.vllm_ascend.mindspeed.deepseekV3
+   # 随后基于该Dockerfile创建docker image。请传入镜像名称，例如 your_image_name
    docker build -t your_image_name -f Dockerfile.vllm_ascend.mindspeed.deepseekV3 .
-   # 执行以下脚本创建容器，请传入容器名称，如your_docker_name，镜像名称同上一步
-   bash run_container.sh your_docker_name your_image_name:latest
+
+   # 请设置容器名称，例如 your_docker_name，镜像名称同上一步
+   container_name=your_docker_name
+   image_name=your_image_name:latest
+
+   # 执行docker run命令创建容器，可通过-v按需挂载宿主机目录至容器
+   docker run -itd \
+   --device=/dev/davinci0 --device=/dev/davinci1 --device=/dev/davinci2 --device=/dev/davinci3 --device=/dev/davinci4 --device=/dev/davinci5 --device=/dev/davinci6 --device=/dev/davinci7 --device=/dev/davinci8 --device=/dev/davinci9 --device=/dev/davinci10 --device=/dev/davinci11 --device=/dev/davinci12 --device=/dev/davinci13 --device=/dev/davinci14 --device=/dev/davinci15 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc \
+   -v /usr/local/dcmi:/usr/local/dcmi \
+   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+   -v /var/log/npu/slog/slogd:/var/log/npu/slog/slogd \
+   -v /usr/local/sbin/:/usr/local/sbin/ \
+   -v /data/:/data/ \
+   -v /home/:/home/ \
+   -v /etc/localtime:/etc/localtime \
+   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+   -v /dev/shm:/dev/shm \
+   --net=host \
+   --name ${container_name} \
+   --privileged ${image_name} /bin/bash
+
+   # 执行docker exec命令进入容器
+   docker exec -it -u root ${container_name} bash
    ```
 
-2. 源码准备
-   ```shell
-   # 下载本sample所在代码仓
+2. 源码准备。
+   ```bash
+   # 下载本样例所在代码仓，以master分支为例
    git clone https://gitcode.com/cann/cann-recipes-train.git
-   # 添加Dockerfile中已经准备好的依赖文件
+
+   # 添加镜像中已经准备好的依赖文件
    cp -r /workspace/verl/verl ./cann-recipes-train/deepseek/
    cp -r /workspace/vllm/vllm ./cann-recipes-train/deepseek/
    cp -r /workspace/vllm-ascend/vllm_ascend ./cann-recipes-train/deepseek/
    cp -r /workspace/Megatron-LM/megatron ./cann-recipes-train/deepseek/
    cp -r /workspace/MindSpeed/mindspeed ./cann-recipes-train/deepseek/
    cp -r /workspace/MindSpeed-LLM/mindspeed_llm ./cann-recipes-train/deepseek/
-   # 进入本sample目录
-   cd ./cann-recipes-train/deepseek/
+   cd ./cann-recipes-train/deepseek/   # 回到本样例目录
+
+   # 安装依赖的python库
    pip install -r requirements.txt
    ```
-   修改veRL源码使能patch修改：
+
+3. 修改verl源码，使能patch修改。
+   
+   在 `verl/workers/megatron_workers.py: line21` 处插入以下代码：
    ```python
-   # 在verl/workers/megatron_workers.py: line21 处插入以下代码：
-   from verl_atches import prelude_patch
+   from verl_patches import prelude_patch
    ```
 
-## 数据集与模型准备
+## 数据集准备
+本样例使用的deepscaler数据集准备方法如下：
+```bash
+# 在本样例目录下创建deepscaler数据集目录
+mkdir -p ./data/deepscaler
+cd ./data/deepscaler
 
-- 数据集准备方法请参考[verl官方文档](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html)，并将其放入数据集放入`./data`路径。
+# 从魔塔社区下载deepscaler数据集的json文件
+pip install modelscope
+modelscope download --dataset agentica-org/DeepScaleR-Preview-Dataset deepscaler.json --local_dir .
 
-- 模型请从[DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)下载，并将其放入`./DeepSeek-V3-hf`路径。
+# 使用本样例提供的工具脚本，将deepscaler.json文件转为train.parquet和test.parquet两个文件并存放至数据集目录
+cd ../..
+python ./verl_patches/scripts/json_to_parquet.py --output_dir ./data/deepscaler --json_path ./data/deepscaler/deepscaler.json
+```
+
+gsm8k等其他数据集准备方法可参考[verl官方文档](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html)。
+
+## 模型权重准备
+本样例使用的DeepSeek-V3模型权重准备方法如下：
+```bash
+# 从魔塔社区下载模型的基础文件，存放至样例的./DeepSeek-V3目录下（不加载权重实验也需要执行这步操作）
+mkdir ./DeepSeek-V3
+pip install modelscope
+modelscope download --model deepseek-ai/DeepSeek-V3 config.json configuration_deepseek.py tokenizer.json tokenizer_config.json --local_dir ./DeepSeek-V3
+
+# 下载DeepSeek-V3完整FP8权重至指定目录，例如 your_fp8_weights（此步骤需要目录所在磁盘有650GB以上空间）
+modelscope download --model deepseek-ai/DeepSeek-V3 --local_dir your_fp8_weights
+
+# 将FP8权重转换为BF16权重并保存至指定目录，例如 your_bf16_weights（此步骤需要目录所在磁盘有1300GB以上空间）
+python verl_patches/scripts/fp8_cast_bf16.py --input-fp8-hf-path your_fp8_weights --output-bf16-hf-path your_bf16_weights
+
+# 将权重之外的文件复制到BF16权重目录下
+cd your_fp8_weights
+cp -r config.json configuration.json configuration_deepseek.py generation_config.json model.safetensors.index.json tokenizer.json tokenizer_config.json your_bf16_weights
+cd -  # 回到本样例根目录
+
+# source环境变量，根据实际CANN安装目录调整
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+
+# 执行权重切分，切分后权重保存至指定目录，例如 your_sharded_weights（此步骤需要目录所在磁盘有1300GB以上空间）
+pip install safetensors bitsandbytes
+python verl_patches/scripts/convert_ckpt_deepseek3.py \
+    --moe-grouped-gemm \
+    --target-tensor-parallel-size 4 \
+    --target-pipeline-parallel-size 8 \
+    --num-layer-list 7,7,8,8,8,8,8,7 \
+    --target-expert-parallel-size 8 \
+    --load-dir your_bf16_weights \
+    --save-dir your_sharded_weights \
+    --moe-tp-extend-ep \
+    --first-k-dense-replace 3 \
+    --num-layers 61
+```
 
 ## RL后训练执行
 
-在本样例代码下载根目录下启动DeepSeekV3的RL后训练。
+在本样例代码根目录下启动DeepSeekV3的RL后训练。
 
-```shell
+```bash
+# 请注意，以下bash启动脚本中的内容需要手动配置
+# source脚本路径：  根据实际CANN安装目录调整
+# MASTER_ADDR：    ray集群主节点的IP地址，每个节点的脚本配置一致
+# SOCKET_IFNAME：  集群中各节点自己的网卡名，可通过ifconfig命令查看
+
 # 基于随机权重的训练脚本
 bash ./verl_patches/scripts/train_deepseekv3_256die_random_init.sh
- # 基于真实权重的训练脚本 
-bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
+
+# 基于真实权重的训练脚本（需要切分权重存储路径`your_sharded_weights`在集群内共享）
+# 请注意，bash启动脚本中的`DIST_CKPT_PATH`环境变量需手动设置为切分权重的保存路径 your_sharded_weights
+bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh   
 ```
 
 ## 性能数据
-基于Atlas 900 A3 SuperPoD超节点128卡集群，加载真实权重，Prefill/Decode阶段长度分别为1K与3K，系统吞吐可达到120TPS/卡。
-| 模型                  | 机器型号     | GBS | n_samples | max_prompt_length | max_tokens | 端到端TPS | 
+基于Atlas 900 A3 SuperPoD超节点128卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为1K与3K，系统吞吐可达到120TPS/卡。
+| 模型                  | 机器型号     | GBS | n_samples | max_prompt_length | max_response_length | 端到端TPS | 
 |---------------------|----------|-----|-----------|-------------------|------------|---------| 
 | DeepSeek-R1-671B    | Atlas 900 A3 SuperPoD | 512 | 16        | 1024              | 3072       | 120     |
-
 
 ## 附录
 ### 手动准备环境
 
 1. 创建vLLM-Ascend镜像。
 
-   ```shell
+   ```bash
    # 镜像下载
    docker pull quay.io/ascend/vllm-ascend:v0.9.1-dev-openeuler
 
-   # 执行以下脚本创建容器，请传入容器名称，如your_docker_name
-   bash run_container.sh your_docker_name quay.io/ascend/vllm-ascend:v0.9.1-dev-openeuler
+   # 执行以下脚本创建容器，请传入容器名称，如 your_docker_name
+   docker run -itd \
+   --device=/dev/davinci0 --device=/dev/davinci1 --device=/dev/davinci2 --device=/dev/davinci3 --device=/dev/davinci4 --device=/dev/davinci5 --device=/dev/davinci6 --device=/dev/davinci7 --device=/dev/davinci8 --device=/dev/davinci9 --device=/dev/davinci10 --device=/dev/davinci11 --device=/dev/davinci12 --device=/dev/davinci13 --device=/dev/davinci14 --device=/dev/davinci15 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc \
+   -v /usr/local/dcmi:/usr/local/dcmi \
+   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+   -v /var/log/npu/slog/slogd:/var/log/npu/slog/slogd \
+   -v /usr/local/sbin/:/usr/local/sbin/ \
+   -v /data/:/data/ \
+   -v /home/:/home/ \
+   -v /etc/localtime:/etc/localtime \
+   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+   -v /dev/shm:/dev/shm \
+   --net=host \
+   --name your_docker_name \
+   --privileged quay.io/ascend/vllm-ascend:v0.9.1-dev-openeuler /bin/bash
+
+   # 执行docker exec命令进入容器
+   docker exec -it -u root your_docker_name bash
+
+   # 安装依赖软件
+   yum install -y patch # openEuler系统
+   apt install -y patch # Ubuntu系统
    ```
 2. 在容器中安装CANN软件包与Ascend Extension for PyTorch软件包。
    - **CANN：8.2.RC1**
 
       请从[软件包下载地址](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.2.RC1)下载如下软件包，并参考[CANN安装文档](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1/softwareinst/instg/instg_0000.html?Mode=PmIns&InstallType=local&OS=Debian&Software=cannToolKit)进行安装。
 
-      - 开发套件包：`Ascend-cann-toolkit_${version}_linux-${arch}.run`、
-      - 二进制算子包：`Ascend-cann-kernels-${chip_type}_${version}_linux-${arch}.run`
+      - 开发套件包：`Ascend-cann-toolkit_${version}_linux-${arch}.run`
+      - 二进制算子包：`Atlas-A3-cann-kernels_${version}_linux-${arch}.run`
       - NNAL加速包：`Ascend-cann-nnal_${version}_linux-${arch}.run`
 
    - **Ascend Extension for PyTorch：7.1.0**
@@ -87,7 +193,9 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 
       请从[软件包下载地址](https://www.hiascend.com/developer/download/community/result?module=pt+cann&pt=7.1.0&cann=8.2.RC1)下载`Ascend Extension for PyTorch 7.1.0-PyTorch2.5.1`软件包，并参考[Ascend Extension for PyTorch安装文档](https://www.hiascend.com/document/detail/zh/Pytorch/710/configandinstg/instg/insg_0004.html)进行安装。
       
-      > 说明：本样例需要安装apex库，请参考[apex](https://gitee.com/ascend/apex)构建安装。
+   - **Apex**
+
+      本样例需要安装apex库，请参考[apex](https://gitee.com/ascend/apex)构建安装。
 
 3. 下载项目源码并安装依赖的python库。
     ```bash
@@ -104,7 +212,10 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他框架代码需要拉取。
 
    返回cann-recipes-train项目代码上级目录，即执行git clone命令时所在目录，并执行如下命令，需注意，请确保环境能够正常连通网络。
-   ```shell
+   ```bash
+   # 返回cann-recipes-train项目代码上级目录
+   cd ../..
+
    # 下载verl源码
    git clone https://github.com/volcengine/verl.git
    cd verl
@@ -145,13 +256,15 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    cd MindSpeed-LLM
    git checkout v2.0.0
    cp -r mindspeed_llm ../cann-recipes-train/deepseek/
-   cd ..
+
+   # 回到项目目录
+   cd ../cann-recipes-train/deepseek/
    ```
 
 5. 修改verl代码。
 
    为了使能patch修改，需要修改以下verl源码。
    ```python
-   # 在verl/workers/megatron_workers.py: line21处插入以下代码：
-   from verl_atches import prelude_patch
+   # 在verl/workers/megatron_workers.py: line21处插入以下代码
+   from verl_patches import prelude_patch
    ```

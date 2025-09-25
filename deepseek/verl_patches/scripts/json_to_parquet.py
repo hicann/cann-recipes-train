@@ -1,0 +1,92 @@
+# coding=utf-8
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+# This file is a part of the CANN Open Software.
+# Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the license.
+
+import os
+import json
+import random
+import argparse
+import logging as logger
+
+import pandas as pd
+
+logger.basicConfig(format="")
+logger.getLogger().setLevel(logger.INFO)
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='deepscaler.json to parquet file', 
+                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--output_dir', type=str, required=True, help='output dir for train/test parquet file')
+    parser.add_argument('--json_path', type=str, default='./deepscaler.json', help='path of deepscaler.json')
+    parser.add_argument('--train_data_ratio', type=float, default=0.9, help='ratio of train data')
+    return parser.parse_args()
+
+
+def validate_arguments(args):
+    if not os.path.exists(args.json_path):
+        raise FileNotFoundError(f"File not found: {args.json_path}")
+    if not 0 < args.train_data_ratio < 1:
+        raise ValueError("Train data ratio should be between 0 and 1")
+    os.makedirs(args.output_dir, exist_ok=True)
+
+
+def convert_json_to_parquet(json_path, train_data_ratio, output_dir):
+    random.seed(42)
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        original_data = json.load(f)
+
+    converted_data = []
+    for item in original_data:
+        converted_item = {
+            "data_source": "deepscaler",
+            "prompt": [{"content": item["problem"], "role": "user"}],
+            "ability": "math",
+            "reward_model": {
+                "ground_truth": item["answer"],
+                "style": "rule"
+            },
+            "extra_info": {
+                "answer": item["solution"]
+            }
+        }
+        converted_data.append(converted_item)
+
+    split_index = int(len(converted_data) * train_data_ratio)
+    train_data = converted_data[:split_index]
+    test_data = converted_data[split_index:]
+
+    for item in train_data:
+        item["split"] = "train"
+    for item in test_data:
+        item["split"] = "test"
+    all_data = train_data + test_data
+    df = pd.DataFrame(all_data)
+    train_df = df[df["split"] == "train"]
+    test_df = df[df["split"] == "test"]
+    del train_df["split"]
+    del test_df["split"]
+
+    train_df.to_parquet(os.path.join(output_dir, "train.parquet"), engine="pyarrow", index=False)
+    test_df.to_parquet(os.path.join(output_dir, "test.parquet"), engine="pyarrow", index=False)
+    logger.info(f"Success! Total num {len(all_data)}, train num {len(train_data)}, test num {len(test_data)}")
+
+
+def main():
+    try:
+        args = parse_arguments()
+        validate_arguments(args)
+        convert_json_to_parquet(args.json_path, args.train_data_ratio, args.output_dir)
+    except Exception as e:
+        logger.info(f"[ERROR]: {e}")
+        exit(1)
+
+
+if __name__ == "__main__":
+    main()

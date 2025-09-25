@@ -7,7 +7,7 @@
 - 新增样例
 
 ## 代码风格
-请使用`pre-commit`工具确保代码满足基本要求，安装后会在git commit时自动检查当前提交的代码规范问题
+请使用`pre-commit`工具确保代码满足基本要求，安装后会在git commit时自动检查当前提交的代码规范问题。
 
 ```shell
 pip install pre-commit
