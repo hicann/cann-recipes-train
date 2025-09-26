@@ -4,7 +4,7 @@
 
 ### 背景
 
-DeepSeek-R1发布后，大模型的RL训练得到了广泛的关注，各大厂商以及开源社区都进行了大量的RL训练实践，致力于构建更高效的RL训练系统。本文基于开源veRL框架，搭配MindSpeed与vllm-ascend框架，经过深度优化与适配，在Atlas 900 A3 SuperPoD超节点上实现了高吞吐性能。
+DeepSeek-R1发布后，大模型的RL训练得到了广泛的关注，各大厂商以及开源社区都进行了大量的RL训练实践，致力于构建更高效的RL训练系统。本文基于开源veRL框架，搭配MindSpeed与vllm-ascend框架，经过深度优化与适配，在Atlas A3集群上实现了高吞吐性能。
 
 本文中涉及的开源框架如下表所示。
 
@@ -72,7 +72,7 @@ vLLM Ascend通过​**​**硬件插件化机制​​解耦了框架与硬件�
 
 ### 详细性能结果
 
-基于Atlas 900 A3 SuperPoD超节点128卡集群，随机初始化权重，Prefill/Decode阶段长度分别为1K与3K（强制推理到3K序列长度，强制专家负载均衡），系统吞吐达到250.2tps/卡。
+基于Atlas A3 128卡环境，随机初始化权重，Prefill/Decode阶段长度分别为1K与3K（强制推理到3K序列长度，强制专家负载均衡），系统吞吐达到250.2tps/卡。
 
 <table border=1px">
 <tr>
@@ -414,7 +414,7 @@ get\_cached\_tensors()中可能涉及AlltoAllV通信，具体有两种情况：
 
 #### 性能收益 
 
-优化完成后，在Atlas 900 A3 SuperPoD 超节点128卡环境上进行验证，采用随机初始化权重，prompt长度为0.075K，response长度为3K，优化前后训练侧启动耗时对比如下。可以看出，训练侧的任务下发耗时基本被消除。
+优化完成后，在Atlas A3 128卡环境上进行验证，采用随机初始化权重，prompt长度为0.075K，response长度为3K，优化前后训练侧启动耗时对比如下。可以看出，训练侧的任务下发耗时基本被消除。
 |  |  优化前启动最大时差  | 优化后启动最大时差    | 收益    |
 | ----- | ---- |---- | ---- |
 | compute_ref_log_prob |  ~57s   | <1s   | ~98.2%   |
@@ -752,7 +752,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 ![](./figures/deepseekr1/image45.png)
 
-此处AllReduce通信实际通信量很小，仅为字节级别，所以Atlas A3训练系列产品的全互联HCCS高通信带宽对我们并无助益，我们关注的是CPU的TCP协议通信和NPU的HCCS通信的时延对比：
+此处AllReduce通信实际通信量很小，仅为字节级别，所以Atlas A3系列产品的全互联HCCS高通信带宽对我们并无助益，我们关注的是CPU的TCP协议通信和NPU的HCCS通信的时延对比：
 
 | 对比项     |  NPU-HCCS (HCCL)    |  CPU-TCP (Gloo)    |
 | ---- | ---- | ---- |
@@ -761,15 +761,15 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 | 大集群扩展性     |  近线性扩展    |   随节点数增加，延迟显著上升（树形/环形拓扑的跳数增加）   |
 
 
-在Atlas A3训练系列产品128卡环境上，单次CPU-TCP通信耗时远超us级，达到了10ms的量级。经过测试发现CPU的通信效率与集群大小强相关，Gloo通信使用树形算法，随着集群规模的增大，时延呈O(log2​ N)增长；而NPU的HCCL通信，使用Double-Ring通信算法、分级通信等算法优化，时延线性度高。因此推算通信后端切换到HCCL后，可显著降低通信延时，获得较大性能收益。
+在Atlas A3 128卡环境上，单次CPU-TCP通信耗时远超us级，达到了10ms的量级。经过测试发现CPU的通信效率与集群大小强相关，Gloo通信使用树形算法，随着集群规模的增大，时延呈O(log2​ N)增长；而NPU的HCCL通信，使用Double-Ring通信算法、分级通信等算法优化，时延线性度高。因此推算通信后端切换到HCCL后，可显著降低通信延时，获得较大性能收益。
 
 #### 优化效果
 
-在Atlas 900 A3 SuperPoD 超节点128卡环境中，将vLLM调度前处理的"has\_unfinished\_requests"函数，以及Decode前处理的"\_get\_forward\_metadata\_across\_dp"函数中allreduce通信的后端由Gloo修改为HCCL之后，单通信耗时由原14ms优化到了3ms以内，如下图所示：
+在Atlas A3 128卡环境中，将vLLM调度前处理的"has\_unfinished\_requests"函数，以及Decode前处理的"\_get\_forward\_metadata\_across\_dp"函数中allreduce通信的后端由Gloo修改为HCCL之后，单通信耗时由原14ms优化到了3ms以内，如下图所示：
 
 ![](./figures/deepseekr1/image46.png)
 
-在A3 256 die上DSR1-671B完整网络上取得的收益如下：
+在Atlas A3 128卡上DSR1-671B完整网络上取得的收益如下：
 
 1.  推理吞吐由519 tps优化到618 tps。
 
@@ -1023,4 +1023,4 @@ from verl_patches import prelude_patch
 
 ### 代码样例执行说明
 
-请参见[DeepSeekR1模型样例使用指导](../deepseek/README.md)。
+请参见[DeepSeekR1模型样例使用指导](../rl_train/deepseek/README.md)。
