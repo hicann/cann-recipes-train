@@ -10,6 +10,7 @@ import os
 import logging
 import torch
 import torch_npu
+from verl.utils.device import get_torch_device
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -30,3 +31,14 @@ def insert_patch(patch_module, original_module):
     for key in patch_module.__all__:
         patch = getattr(patch_module, key)
         setattr(original_module, key, patch)
+
+
+def empty_cache():
+    """
+    To use light-weight empty_cache, user should set
+    `PYTORCH_NPU_ALLOC_CONF`=`expandable_segments:True`
+    """
+    if hasattr(get_torch_device(), 'empty_virt_addr_cache'):
+        get_torch_device().empty_virt_addr_cache()
+    else:
+        get_torch_device().empty_cache()

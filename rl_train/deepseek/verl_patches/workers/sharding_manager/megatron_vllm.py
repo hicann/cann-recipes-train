@@ -43,7 +43,7 @@ from verl.utils.vllm_utils import patch_vllm_moe_model_weight_loader
 from verl.workers.sharding_manager.base import BaseShardingManager
 from verl.workers.sharding_manager.megatron_vllm import AllGatherPPModel
 
-from verl_patches.tools import print_memory
+from verl_patches.tools import print_memory, empty_cache
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -136,7 +136,7 @@ class MegatronVLLMShardingManager(BaseShardingManager):
         for model in self.actor_module:
             model.train()
 
-        torch.cuda.empty_cache()
+        empty_cache()
 
     @GPUMemoryLogger(role="megatron vllm sharding_manager", logger=logger)
     def preprocess_data(self, data: DataProto) -> DataProto:

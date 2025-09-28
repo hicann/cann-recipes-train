@@ -18,6 +18,8 @@
 __all__ = [
     "offload_megatron_model_to_cpu",
     "load_megatron_model_to_gpu",
+    "offload_megatron_optimizer",
+    "load_megatron_optimizer",
     "default_tp_concat_fn",
     "per_tensor_generator",
     "get_transformer_layer_offset",
@@ -38,6 +40,7 @@ from verl.utils.megatron_utils import (
     broadcast_str_from_megatron_pp,
 )
 from verl_patches.utils.reshard import ep_param_reshard_by_alltoallv, get_rollout_expert_after_resharding
+from verl_patches.tools import empty_cache
 
 
 @torch.no_grad()
@@ -75,7 +78,7 @@ def offload_megatron_model_to_cpu(models, offload_param=True):
                 if param.grad is not None:
                     param.grad = param.grad.to("cpu", non_blocking=True)
     gc.collect()
-    torch.cuda.empty_cache()
+    empty_cache()
 
 
 @torch.no_grad()
@@ -102,7 +105,45 @@ def load_megatron_model_to_gpu(models, load_grad=True):
                 if param.grad is not None:
                     param.grad = param.grad.to(device_id, non_blocking=True)
     gc.collect()
-    torch.cuda.empty_cache()
+    empty_cache()
+
+
+@torch.no_grad()
+def offload_megatron_optimizer(optimizers):
+    def _iter_opts(opt):
+        if isinstance(opt, ChainedOptimizer):
+            return opt.chained_optimizers
+        return [opt]
+
+    for _opt in _iter_opts(optimizers):
+        offload_megatron_copy_params(_opt)
+        opt_state_dict_values = _opt.optimizer.state.values()
+        for v in opt_state_dict_values:
+            if "exp_avg" in v:
+                v["exp_avg"] = v["exp_avg"].to("cpu", non_blocking=True)
+            if "exp_avg_sq" in v:
+                v["exp_avg_sq"] = v["exp_avg_sq"].to("cpu", non_blocking=True)
+        gc.collect()
+        empty_cache()
+
+
+@torch.no_grad()
+def load_megatron_optimizer(optimizers):
+    def _iter_opts(opt):
+        if isinstance(opt, ChainedOptimizer):
+            return opt.chained_optimizers
+        return [opt]
+
+    for _opt in _iter_opts(optimizers):
+        load_megatron_copy_params(_opt)
+        opt_state_dict_values = _opt.optimizer.state.values()
+        for v in opt_state_dict_values:
+            if "exp_avg" in v:
+                v["exp_avg"] = v["exp_avg"].to(torch.cuda.current_device(), non_blocking=True)
+            if "exp_avg_sq" in v:
+                v["exp_avg_sq"] = v["exp_avg_sq"].to(torch.cuda.current_device(), non_blocking=True)
+        gc.collect()
+        empty_cache()
 
 
 def default_tp_concat_fn(layer_name_mapping, name, train_params, infer_params, model_config, convert_qkv_gate_up_by_simple_split=False):

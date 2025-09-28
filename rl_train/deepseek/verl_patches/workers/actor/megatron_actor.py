@@ -44,7 +44,7 @@ from verl.utils.seqlen_balancing import rearrange_micro_batches
 from verl.workers.actor.megatron_actor import MegatronPPOActor
 
 from verl_patches.profiler import NPUProfiler
-from verl_patches.tools import print_memory
+from verl_patches.tools import print_memory, empty_cache
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -136,7 +136,7 @@ def compute_log_prob(self, data: DataProto, calculate_entropy=False) -> torch.Te
                 )
 
     # add empty cache after each compute
-    torch.cuda.empty_cache()
+    empty_cache()
 
     return log_probs, entropys
 
@@ -437,7 +437,7 @@ def update_policy(self, dataloader: Iterable[DataProto]) -> Dict:
         npu_prof.step()
         npu_prof.stop()
 
-    torch.cuda.empty_cache()
+    empty_cache()
     return metrics
 
 

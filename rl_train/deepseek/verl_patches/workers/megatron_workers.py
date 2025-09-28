@@ -43,8 +43,7 @@ from verl.utils.megatron_utils import (
 from verl.utils.model import load_megatron_gptmodel_weights
 from verl.workers.actor.megatron_actor import MegatronPPOActor
 
-from verl_patches.train_engine.initialize_training import translate_verl_train_configs_to_megatron, initialize_megatron
-from verl_patches.tools import print_memory
+from verl_patches.train_engine.initialize_trai, empty_cache
 from verl_patches.tensor_cache import TensorCache
 
 logger = logging.getLogger(__file__)
@@ -353,7 +352,7 @@ def actor_rollout_ref_init_model(self):
             use_distributed_optimizer=self.config.actor.megatron.use_distributed_optimizer,
             checkpoint_contents=self.config.actor.checkpoint.contents,
         )
-    torch.cuda.empty_cache()
+    empty_cache()
     log_gpu_memory_usage("After init_model finish", logger=logger)
 
 
@@ -412,7 +411,7 @@ def actor_rollout_ref_worker_update_actor(self, data: DataProto):
         # clear the cache on NPU after update
         self.tensor_cache.clear()
 
-    torch.cuda.empty_cache()
+    empty_cache()
     print_memory("after actor update once")
     return output
 
@@ -467,7 +466,7 @@ def actor_rollout_ref_generate_sequences(self, prompts: DataProto):
 
     output = output.to("cpu")
     # clear kv cache
-    torch.cuda.empty_cache()
+    empty_cache()
     print_memory("after gen during training")
     return output
 
@@ -509,7 +508,7 @@ def actor_rollout_ref_worker_compute_ref(self, data: DataProto):
         offload_megatron_model_to_cpu(self.ref_module)
         print_memory("after offload ref model during training")
         log_gpu_memory_usage("After offload ref params and grad during compute_ref_log_prob", logger=logger)
-    torch.cuda.empty_cache()
+    empty_cache()
     return output
 
 

@@ -32,7 +32,7 @@ from verl.workers.rollout.base import BaseRollout
 from verl.workers.rollout.vllm_rollout.vllm_rollout_spmd import vLLMRollout
 
 from verl_patches.workers.vllm_rollout.vllm_parallel_state import init_parallel_state
-from verl_patches.tools import print_memory
+from verl_patches.tools import print_memory, empty_cache
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -208,7 +208,7 @@ def offload_model_weights(self):
 
     self.gpu_buffers = None
     gc.collect()
-    torch.npu.empty_cache()
+    empty_cache()
     print_memory("after vllm offload_model_weights")
 
 
@@ -248,7 +248,7 @@ def free_cache_engine(self):
                 attn_impl.value_cache = None
 
     gc.collect()
-    torch.npu.empty_cache()
+    empty_cache()
     print_memory("after free_cache_engine")
 
 
