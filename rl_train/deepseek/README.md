@@ -131,6 +131,7 @@ python verl_patches/scripts/convert_ckpt_deepseek3.py \
 # source脚本路径：  根据实际CANN安装目录调整
 # MASTER_ADDR：    ray集群主节点的IP地址，每个节点的脚本配置一致
 # SOCKET_IFNAME：  集群中各节点自己的网卡名，可通过ifconfig命令查看
+# LD_PRELOAD：     其中jemalloc文件位置需根据实际情况调整
 
 # 基于随机权重的训练脚本
 bash ./verl_patches/scripts/train_deepseekv3_256die_random_init.sh
@@ -197,6 +198,10 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 
       本样例需要安装apex库，请参考[apex](https://gitee.com/ascend/apex)构建安装。
 
+   - **Jemalloc**
+
+      本样例需要安装jemalloc库，请参考[高性能内存库jemalloc安装](https://gitcode.com/Ascend/MindSpeed-RL/blob/master/docs/install_guide.md#%E9%AB%98%E6%80%A7%E8%83%BD%E5%86%85%E5%AD%98%E5%BA%93-jemalloc-%E5%AE%89%E8%A3%85)。
+
 3. 下载项目源码并安装依赖的python库。
     ```bash
     # 下载项目源码，以master分支为例
@@ -259,6 +264,9 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 
    # 回到项目目录
    cd ../cann-recipes-train/rl_train/deepseek/
+
+   # 安装依赖的python库
+   pip install -r requirements.txt
    ```
 
 5. 修改verl代码。

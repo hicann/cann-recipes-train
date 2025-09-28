@@ -22,6 +22,7 @@ ENV DEBIAN_FRONTED=noninteractive
 ENV COMPILE_CUSTOM_KERNELS=${COMPILE_CUSTOM_KERNELS}
 
 RUN yum install -y patch
+RUN yum install -y jemalloc
 
 WORKDIR /workspace
 
