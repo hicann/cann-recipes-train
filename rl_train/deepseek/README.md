@@ -91,7 +91,8 @@ gsm8k等其他数据集准备方法可参考[verl官方文档](https://verl.read
 # 从魔塔社区下载模型的基础文件，存放至样例的./DeepSeek-V3目录下（不加载权重实验也需要执行这步操作）
 mkdir ./DeepSeek-V3
 pip install modelscope
-modelscope download --model deepseek-ai/DeepSeek-V3 config.json configuration_deepseek.py tokenizer.json tokenizer_config.json --local_dir ./DeepSeek-V3
+modelscope download --model deepseek-ai/DeepSeek-V3 configuration_deepseek.py tokenizer.json tokenizer_config.json --local_dir ./DeepSeek-V3
+cp ./verl_patches/config.json ./DeepSeek-V3/config.json  # 使用本样例提供的config，去掉了量化与MTP
 
 # 下载DeepSeek-V3完整FP8权重至指定目录，例如 your_fp8_weights（此步骤需要目录所在磁盘有650GB以上空间）
 modelscope download --model deepseek-ai/DeepSeek-V3 --local_dir your_fp8_weights
