@@ -1,5 +1,5 @@
 # Adapted from
-# https://github.com/volcengine/verl/blob/v0.4.0/verl/utils/reward/__init__.py
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/utils/reward_score/__init__.py
 # Copyright (c) 2025 Huawei Technologies Co., Ltd.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
@@ -61,7 +61,7 @@ def default_compute_score(
         from . import math_dapo
 
         res = math_dapo.compute_score(solution_str, ground_truth)
-    elif data_source in  ["deepscaler"]:
+    elif data_source in ["deepscaler"]:
         from verl_patches.utils.reward import deepscaler
         res = deepscaler.compute_score(solution_str, ground_truth)
     elif data_source in [

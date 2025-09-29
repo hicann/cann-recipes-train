@@ -43,7 +43,8 @@ from verl.utils.megatron_utils import (
 from verl.utils.model import load_megatron_gptmodel_weights
 from verl.workers.actor.megatron_actor import MegatronPPOActor
 
-from verl_patches.train_engine.initialize_trai, empty_cache
+from verl_patches.train_engine.initialize_training import translate_verl_train_configs_to_megatron, initialize_megatron
+from verl_patches.tools import print_memory, empty_cache
 from verl_patches.tensor_cache import TensorCache
 
 logger = logging.getLogger(__file__)

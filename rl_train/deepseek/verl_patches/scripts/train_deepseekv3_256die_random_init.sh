@@ -1,4 +1,4 @@
-# This program is free software, you can redistribute it and/or modify.
+# This program is free software, you can redistribute it and/or modify it.
 # Copyright (c) 2025 Huawei Technologies Co., Ltd.
 # This file is a part of the CANN Open Software.
 # Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
@@ -11,7 +11,7 @@ ray stop --force
 
 cp ./verl_patches/trainer/config/ppo_mindspeed_trainer.yaml ./verl/trainer/config/
 cp ./verl_patches/trainer/main_ppo_npu.py ./verl/trainer/
-cp ./verl_patches/utils/reward/init.py ./verl/utils/reward_score/
+cp ./verl_patches/utils/reward/__init__.py ./verl/utils/reward_score/
 
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 source /usr/local/Ascend/nnal/atb/set_env.sh

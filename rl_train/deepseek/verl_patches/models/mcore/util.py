@@ -50,9 +50,11 @@ def postprocess_packed_seqs(
     for i in range(batch_size):
         if cp_size <= 1:
             s = attention_mask[i].sum().item()
-            output_new[i, attention_mask[i]] = output[0][packed_seq_params.cu_seqlens_q_padded[i] : packed_seq_params.cu_seqlens_q_padded[i] + s]
+            output_new[i, attention_mask[i]] = output[0][packed_seq_params.cu_seqlens_q_padded[i] : \
+                packed_seq_params.cu_seqlens_q_padded[i] + s]
             continue
-        s_len_padded_chunk = (packed_seq_params.cu_seqlens_q_padded[i + 1] - packed_seq_params.cu_seqlens_q_padded[i]) // cp_size
+        s_len_padded_chunk = (packed_seq_params.cu_seqlens_q_padded[i + 1] - packed_seq_params.cu_seqlens_q_padded[i]) \
+            // cp_size
         half_seqlen = s_len_padded_chunk // 2
         s_len = attention_mask[i].sum().item()
         s_len_padded = s_len_padded_chunk * cp_size
