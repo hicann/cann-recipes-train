@@ -210,7 +210,7 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 
     # 安装依赖的python库
     cd cann-recipes-train/rl_train/deepseek
-    pip3 install -r requirements.txt
+    pip install -r requirements.txt
     ```
 
 4. 下载依赖的开源框架代码。
@@ -220,7 +220,7 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    返回cann-recipes-train项目代码上级目录，即执行git clone命令时所在目录，并执行如下命令，需注意，请确保环境能够正常连通网络。
    ```bash
    # 返回cann-recipes-train项目代码上级目录
-   cd ../..
+   cd ../../..
 
    # 下载verl源码
    git clone https://github.com/volcengine/verl.git
@@ -253,7 +253,6 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    git clone https://gitee.com/ascend/MindSpeed.git
    cd MindSpeed
    git checkout v2.0.0_core_r0.8.0
-   pip install -r requirements.txt
    cp -r mindspeed ../cann-recipes-train/rl_train/deepseek/
    cd ..
 
@@ -265,9 +264,6 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 
    # 回到项目目录
    cd ../cann-recipes-train/rl_train/deepseek/
-
-   # 安装依赖的python库
-   pip install -r requirements.txt
    ```
 
 5. 修改verl代码。
