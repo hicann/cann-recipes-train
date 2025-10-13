@@ -113,9 +113,16 @@ def verl_workers_adaptation():
     insert_patch(megatron_vllm_patch, megatron_vllm_original)
 
 
+def verl_protocol_adaptation():
+    from verl_patches.protocol import union_tensor_dict
+    from verl import protocol
+    protocol.union_tensor_dict = union_tensor_dict
+
+
 def exe_adaptation():
     mcore_models_adaptation()
     verl_utils_adaptation()
     verl_workers_adaptation()
+    verl_protocol_adaptation()
 
 exe_adaptation()
