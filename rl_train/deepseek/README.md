@@ -2,12 +2,18 @@
 
 ## 概述
 
-本样例针对DeepSeek-V3模型，基于[verl开源框架](https://github.com/volcengine/verl)，配合MindSpeed-LLM和vLLM-Ascend框架，完成RL训练全流程的优化适配。
+本样例针对DeepSeek-V3模型，基于[verl开源框架](https://github.com/volcengine/verl)，配合MindSpeed-LLM和vLLM-Ascend框架，完成RL训练全流程的优化适配。优化点介绍可参见[基于veRL前端&A3集群的DeepSeekR1模型RL训练优化实践](../../docs/deepseek_rl_train_optimization.md)。
 
-本样例采用的优化点介绍可参见[基于veRL前端&A3集群的DeepSeekR1模型RL训练优化实践](../../docs/deepseek_rl_train_optimization.md)。
+本样例基于Atlas 900 A3 128卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为1K与3K，系统吞吐可达到120TPS/卡。随着训练的进行，模型response_length会有所增长，系统吞吐可以进一步提升。
+| 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
+|---------------------|----------|-----|-----------|--------- | ----------|------------|---------|
+| DeepSeek-V3-671B    | Atlas A3 128卡 | 512 | 16        | 2 |  1024              | 3072       | 120     |
 
-## 支持的产品型号
-Atlas A3系列产品
+
+## 硬件要求
+产品型号：Atlas A3 系列
+
+最少卡数：128张A3
 
 ## 基于Dockerfile构建环境
 > 环境搭建可以基于Dockerfile快速实现，我们已经在Dockerfile里配置了必要的昇腾软件和其他第三方软件的依赖。如果遇到网络不通等问题，也可以参考附录中的[手动准备环境](#手动准备环境)章节。
@@ -141,12 +147,6 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_random_init.sh
 # 请注意，bash启动脚本中的`DIST_CKPT_PATH`环境变量需手动设置为切分权重的保存路径 your_sharded_weights
 bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
 ```
-
-## 性能数据
-基于Atlas 900 A3 128卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为1K与3K，系统吞吐可达到120TPS/卡。
-| 模型                  | 机器型号     | GBS | n_samples | max_prompt_length | max_response_length | 端到端TPS |
-|---------------------|----------|-----|-----------|-------------------|------------|---------|
-| DeepSeek-R1-671B    | Atlas A3 128卡 | 512 | 16        | 1024              | 3072       | 120     |
 
 ## 附录
 ### 手动准备环境

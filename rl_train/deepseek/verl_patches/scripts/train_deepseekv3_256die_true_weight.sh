@@ -67,7 +67,7 @@ export VLLM_ENABLE_MC2=1                        # enable MC2 communication
 export VLLM_DP_SIZE=128                         # configure the DP size of vLLM
 export VLLM_ENABLE_FIX_ROUTE=0                  # 0:Turn off the fixed route of vLLM; 1:enable the fixed route of vLLM
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode
-export VLLM_ASCEND_MODEL_EXECUTE_TIME_OBSERVE=1
+export VLLM_ASCEND_MODEL_EXECUTE_TIME_OBSERVE=0
 
 export VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE=1
 export VLLM_ASCEND_ACL_OP_INIT_MODE=0

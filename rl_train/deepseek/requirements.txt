@@ -29,9 +29,10 @@ einops
 scipy
 sentencepiece
 pytest
-tokenizers<=0.20.3
+tokenizers
 gpytorch
 scikit-learn
 SQLAlchemy
 pulp==3.0.0
 highspy==1.9.0
+mathruler
