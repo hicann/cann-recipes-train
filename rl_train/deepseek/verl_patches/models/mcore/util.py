@@ -1,6 +1,6 @@
 # Adapted from
 # https://github.com/volcengine/verl/blob/main/verl/models/mcore/util.py
-# Copyright (c) 2025 Huawei Technologies Co., Ltd.
+# Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2025 Bytedance Ltd. and/or its affiliates
 # Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 #

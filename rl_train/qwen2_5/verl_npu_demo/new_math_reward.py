@@ -5,7 +5,7 @@
 # https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/tasks/hendrycks_math/utils.py
 # Additional references are made to OpenCompass Authors' work at:
 # https://github.com/open-compass/opencompass/blob/main/opencompass/evaluator/math_evaluator.py
-# Copyright (c) 2025 Huawei Technologies Co., Ltd.
+# Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates. All rights reserved.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
 # Copyright 2020 OpenCompass Authors. All rights reserved.

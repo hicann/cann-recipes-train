@@ -1,6 +1,6 @@
 # Adapted from
 # https://github.com/volcengine/verl/blob/v0.4.0/verl/models/mcore/model_forward.py
-# Copyright (c) 2025 Huawei Technologies Co., Ltd.
+# Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2025 Bytedance Ltd. and/or its affiliates
 # Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.

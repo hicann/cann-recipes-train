@@ -1,6 +1,6 @@
 # Adapted from
 # https://github.com/NVIDIA/Megatron-LM/blob/core_r0.8.0/megatron/core/tensor_parallel/cross_entropy.py
-# Copyright (c) 2025 Huawei Technologies Co., Ltd.
+# Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
