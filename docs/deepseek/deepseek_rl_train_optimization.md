@@ -43,7 +43,7 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 
 本实践在如下四个方面对verl进行了性能优化：
 
-![](./figures/deepseekr1/image2.png)
+![](./figures/image2.png)
 
 ### 1.4 详细性能结果
 
@@ -285,7 +285,7 @@ additional_config={
 
 如下图所示，256Die训练中ref profiling 0号卡的第一个通信耗时异常。
 
-![](./figures/deepseekr1/image3.png) 
+![](./figures/image3.png) 
 
 #### 3.1.2 训练侧任务启动时差过大现象
 
@@ -294,7 +294,7 @@ additional_config={
 
 具体现象是，0卡总是启动最早，最后一张卡启动最晚，每张卡串行启动，并且训练侧最大启动时间差非常接近profiling中第一个超长通信的耗时。如下图所示，256Die训练中，0卡与255卡的update启动时差可以达到96秒。
 
-![](./figures/deepseekr1/image4.png)
+![](./figures/image4.png)
 
 #### 3.1.3 verl控制器逻辑分析
 
@@ -308,7 +308,7 @@ additional_config={
 
 dispatch\_fn和collect\_fn分别做了输入tensor的split和输出tensor的concat操作，实际观察耗时很短。再分析execute\_fn，对应erl/single\_controller/ray/base.py中的execute\_all\_async函数，如下图所示。这里代码逻辑符合前面观察到的每个worker串行启动任务的现象，在第586行之前加时间打点可证实是串行任务下发导致不同worker任务启动存在时间差，进而导致训练侧表现出的性能差问题。
 
-![](./figures/deepseekr1/image5.png)
+![](./figures/image5.png)
 
  
 
@@ -324,18 +324,18 @@ dispatch\_fn和collect\_fn分别做了输入tensor的split和输出tensor的conc
 
 - gen的输入仅为prompt，而训练侧部分输入的序列长度等于prompt+response。
 
-![](./figures/deepseekr1/image6.png)
+![](./figures/image6.png)
 
 
 #### 3.1.5 verl控制器逻辑总结
 
 经过以上分析，对于单个worker而言，verl控制器任务间调度逻辑可用如下流程图描述：
 
-![](./figures/deepseekr1/image7.png)
+![](./figures/image7.png)
 
 如下时序图可以更清楚看到verl框架任务下发产生的性能瓶颈。
 
-![](./figures/deepseekr1/image8.png)
+![](./figures/image8.png)
 
 
 ### 3.2 性能优化：D2D数据传输
@@ -371,25 +371,25 @@ verl上层用Ray做调度，在worker间传递数据，实现RL算法的控制�
 
 我们使用TensorCache在device管理前后任务间共用的tensor，从而加速传输速度，减少任务下发耗时。对于单个worker而言，新方案中任务间的流程大致如下：
 
-![](./figures/deepseekr1/image9.png)
+![](./figures/image9.png)
 
 以下时序图展示了方案的收益来源：主要为数据流加速后，任务下发至worker的耗时大大减少，worker间任务启动时差大大降低。
 
-![](./figures/deepseekr1/image10.png)
+![](./figures/image10.png)
 
 此外，为了尽可能减少数据在host侧主进程和device侧worker进程间传输的开销，需要细致优化RL训练中的数据流。考察主要的三个任务generate\_sequences、compute\_ref\_log\_prob与update\_actor，verl原本的数据流如下，所有输入输出tensor都经过主进程：
 
-![](./figures/deepseekr1/image11.png)
+![](./figures/image11.png)
 
 为了最大化加速数据流，需要主进程的训练主流程代码配合修改，确保只在host和device间传输必要的tensor（例如host侧计算的输出作为device侧计算的输入，或者device计算的输出作为host侧计算的输入），最终实现如下的数据流：
 
-![](./figures/deepseekr1/image12.png)
+![](./figures/image12.png)
 
 #### 3.2.3 TensorCache设计细节
 
 TensorCache类设计如下，每个worker实例将持有一个TensorCache，即每个device上有一个TensorCache管理tensor数据。
 
-![](./figures/deepseekr1/image13.png)
+![](./figures/image13.png)
 
 | **属性或方法**   | **作用说明**  |
 | ----- | ---- |
@@ -410,7 +410,7 @@ get\_cached\_tensors()中可能涉及AlltoAllV通信，具体有两种情况：
 
   当ref计算任务使用generate任务更新过的缓存时会出现这种情况。此时需要对缓存中tensor在batch维度做reshard，相当于使用AlltoAllV通信完成verl原本主进程做的dispatch+collect逻辑。以8卡为例，AlltoAllV要实现的通信效果如下。
 
-  ![](./figures/deepseekr1/image14.png)
+  ![](./figures/image14.png)
 
  
 
@@ -454,7 +454,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 通过识别含".mlp.experts.linear\_fc"关键字的参数名，触发EP路由专家参数迁移逻辑。首先在ep\_group范围执行专家参数的all\_gather获取全部路由专家参数（256专家），再使用推理侧的load\_weight加载单卡所需的专家参数（1专家）。下图以总计8个路由专家为例展示了这一过程，当前假定本轮迭代到的参数已通过Broadcast分发到各PP rank上，同一个pp group内参数相同。
 
-![](./figures/deepseekr1/image15.png)
+![](./figures/image15.png)
 
 通过全量聚合实现参数迁移虽然代码实现简单，但在大规模异构环境中存在显著局限性：
 
@@ -470,7 +470,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 针对上述分析中的路由专家冗余迁移的问题，我们基于AlltoAllV通信设计了定向路由机制，实现训练参数向推理架构的零冗余迁移。方案如下图所示：
 
-![](./figures/deepseekr1/image16.png)
+![](./figures/image16.png)
 
 基于训练侧全局 rank 的专家归属，生成稀疏发送路由（以示例中8个发送缓冲区为例，上图0-7分别表示8个专家参数）：
 - rank0（训练Group0）：持有专家 0、1，需分别定向发送至推理rank0和rank1，故发送表为[0, 1, ∅, ∅]（前两个位置为有效专家，后两个位置为空）。
@@ -511,7 +511,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 以上过程如下图所示。在此模式下，同名参数在不同训练PP rank上进行了重复的TP域AllGather，带来了显著的通信冗余开销。
 
-![](./figures/deepseekr1/image17.png)
+![](./figures/image17.png)
 
 **优化方案**
 
@@ -523,7 +523,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 2. 原本PP域内一个参数做一次Broadcast，优化后一次AlltoAll即可完成PP个参数的广播，通信效率更高。
 
-![](./figures/deepseekr1/image18.png)
+![](./figures/image18.png)
 
 需要注意的是，当前部分参数不使用此新方案处理，如".mlp.experts.weight"使用专家的AlltoAllV优化；"embedding"、"output\_layer"等输入输出相关参数，以及MLP的dense层等，将在后续进行迭代优化。
 
@@ -553,7 +553,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 调整前后的offload/onload流程对比如下图所示：
 
-![](./figures/deepseekr1/image19.png)
+![](./figures/image19.png)
 
 ## 5. 性能优化：训练
 
@@ -573,7 +573,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 对于GRPO这类on-policy训练算法，其old\_log\_prob计算结果与update\_actor前向计算所得的log\_prob数值相同（因为训练模型参数一致），因此可直接使用log\_prob.detach()替代old\_log\_prob，从而省去一次训练模型前向计算的耗时。
 
-![](./figures/deepseekr1/image21.png)
+![](./figures/image21.png)
 
 当前verl并未支持这一功能，本实践为verl补充实现了old_log_prob免计算特性。将config.actor\_rollout\_ref.actor.recompute\_old\_log\_prob设置为False即可启用该优化。
 
@@ -581,7 +581,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 数据生成推理阶段一直是RL训练性能优化的重中之重，在长序列场景下，推理阶段耗时可占总体耗时的80%以上；在当前DeepSeek-R1的1K推3K场景下，推理阶段耗时亦是接近总体耗时的一半。因此，本实践着重针对RL推理的框架调度、通信、模型算子亲和等多方面做了性能优化，最终在**DeepSeek-R1的随机初始化权重的1K强制推3K场景达成推理吞吐610+ token/p/s**，主要历程如下图所示：
 
-![](./figures/deepseekr1/image22.png)
+![](./figures/image22.png)
 
 以上所有优化代码已全部合入[vLLM-Ascend社区仓](https://github.com/vllm-project/vllm-ascend)，本节将对其中收益贡献较大的TorchAir整图下沉使能、MoE/MLA多流、零冗余TP转EP通信优化、KVCache支持NZ、大EP的Transpose/Cumsum消除、RL推理调度bound优化等特性做逐一介绍。
 
@@ -591,7 +591,7 @@ DeepSeek R1作为典型的MoE架构模型，其专家层（Expert Layer）参数
 
 PyTorch的Eager模式可以通过Ascend Extension for PyTorch（torch\_npu）无缝对接昇腾硬件，但推理总耗时会受到算子下发调度开销的拖累，出现所谓调度Bound的现象而极大地影响性能。下图以DeepSeek-V3的MLA结构为例，为Pytorch在Eager模式下的调度开销做了一个直观的展示：NPU在主要时间里都保持空闲，CPU侧算子调度开销成为了推理耗时的主要因素。
 
-![](./figures/deepseekr1/image23.PNG)
+![](./figures/image23.PNG)
 
 #### 6.1.2 优化方案
 
@@ -601,7 +601,7 @@ PyTorch的Eager模式可以通过Ascend Extension for PyTorch（torch\_npu）无
 
 开启TorchAir图模式后单层模型对应Profiling如下图所示，可见其中的调度开销被完全消除：
 
-![](./figures/deepseekr1/image24.PNG)
+![](./figures/image24.PNG)
 
 实测双层Dense + MoE网络推理在图模式下耗时优化9.5ms，在671B全参整网中Decode吞吐提升翻倍。
 
@@ -617,7 +617,7 @@ DeepSeek-V3网络的MoE结构计算路由专家与共享专家的激活值，其
 
 在vLLM-Ascend的原生实现中，共享专家计算和路由专家计算串行执行，对应如下图所示的Profiling，可见其在计算与通信的编排上存在以下两个问题：
 
-![](./figures/deepseekr1/image25.PNG)
+![](./figures/image25.PNG)
 
 - MC2算子（同时包含通信与Vector计算）执行时，Cube运算单元闲置。
 
@@ -627,27 +627,27 @@ DeepSeek-V3网络的MoE结构计算路由专家与共享专家的激活值，其
 
 与MoE结构类似，DeepSeek-V3网络的MLA结构中亦存在部分无数据依赖的计算步骤。原生vLLM-Ascend的实现未考虑这一特点，将所有算子串行执行，因而存在进一步的优化空间。
 
-![](./figures/deepseekr1/image26.PNG)
+![](./figures/image26.PNG)
 
 #### 6.2.2 优化方案
 
 针对MoE部分，本实践基于TorchAir的多流能力将共享专家的计算拆分到并行的计算流上作重新排布。将共享专家的"gate\_up\_proj"矩阵运算与路由专家的"dispatch"通信算子并行，共享专家的"down\_proj"矩阵运算与路由专家的"combine"通信算子并行，通过通算并行的方式优化Decode耗时。
 
-![moe_optimizaiton_1](./figures/deepseekr1/image27.png)
+![moe_optimizaiton_1](./figures/image27.png)
 
 同时，为了避免共享专家"down\_proj"计算结束后的AllReduce通信拖尾，本实践额外通过保存共享专家冗余权重的方式消除张量并行带来的AllReduce通信。由于共享专家本身矩阵运算规模较小，即使不做TP切分也可以被MC2算子基本掩盖，获得进一步的性能收益。
 
 类似地，针对MLA部分，同样可以经过一定的流水排布将无数据依赖的Cube与Vector计算作多流并行执行，提升Decode性能。
 
-![moe_optimizaiton_2](./figures/deepseekr1/image28.png)
+![moe_optimizaiton_2](./figures/image28.png)
 
 #### 6.2.3 优化效果
 
 开启MoE多流与MLA多流优化后的网络片段Profiling如下图所示：
 
-![](./figures/deepseekr1/image29.PNG)
+![](./figures/image29.PNG)
 
-![](./figures/deepseekr1/image30.PNG)
+![](./figures/image30.PNG)
 
 可见MoE层共享专家计算和MLA层Vector计算已被卸载到从流中，相关耗时被对应通信算子、Cube计算算子所掩盖，对应单步Decode TPOT优化6ms，整网推理吞吐提升7%。
 
@@ -657,13 +657,13 @@ DeepSeek-V3网络的MoE结构计算路由专家与共享专家的激活值，其
 
 为了突破单设备内存限制，本实践推理阶段针对MLA层与MoE层分别使用TP和EP切分，将DeepSeek-V3完整模型拆分到多个设备运行。在vLLM-Ascend的原生实现中，MLA层通过AllReduce完成张量并行场景下的数据汇聚，MoE层通过Split算子从中取出本卡需要的数据完成TP切分到EP切分的转化，此处AllReduce + Split的组合引入了通信量和计算量的双重冗余。
 
-![](./figures/deepseekr1/image31.png)
+![](./figures/image31.png)
 
 #### 6.3.2 优化方案
 
 本实践采用零冗余的TP转EP的通信方案，在Decode阶段将MLA层的AllReduce算子替换为ReduceScatter算子，使MoE层仅接收本卡计算所必需的数据，并将MoE层末尾的AllGather通信移至MLA层，保证原本的TP切分逻辑的正确性。由于AllReduce算子的通信量与ReduceScatter与AllGather算子的通信量之和相当，从而本方案在MLA层整体通信量保持不变的前提下，消除了MoE部分原本的AllGather通信与Split算子。
 
-![](./figures/deepseekr1/image32.png)
+![](./figures/image32.png)
 
 #### 6.3.3 优化效果
 
@@ -675,7 +675,7 @@ DeepSeek-V3网络的MoE结构计算路由专家与共享专家的激活值，其
 
 NZ是NPU上的一种特殊的私有数据格式，如下图所示，其将完整数据划分为数据块，并采取块之间列优先，块内行优先的内存排布方式。
 
-![](./figures/deepseekr1/image35.png)
+![](./figures/image35.png)
 
 在矩阵进行分块计算时，NZ格式可以使计算单元访问连续的数据内存，因而能够最大程度挖掘出NPU Cube 单元的性能。算子一般包含将数据格式转化为NZ的步骤，通过预先将KVCache按照NZ格式进行存储，可以消除FusedInferAttentionScore算子内部的格式转换阶段，并优化推理Decode阶段FA算子的性能。
 
@@ -687,7 +687,7 @@ NZ是NPU上的一种特殊的私有数据格式，如下图所示，其将完整
 
 本实践在vLLM-ascend中torchair\_graph\_config下新增了用于控制KVCache NZ优化的配置项enable\_kv\_nz。该优化的收益随序列长度上升而增长，具体结果如下图所示，序列长度为3K时Decode TPOT收益将超过1ms。
 
-![](./figures/deepseekr1/image36.PNG)
+![](./figures/image36.PNG)
 
 ### 6.5 大EP的冗余算子消除
 
@@ -697,17 +697,17 @@ NZ是NPU上的一种特殊的私有数据格式，如下图所示，其将完整
 
 DeepSeek-V3模型普遍使用大EP的推理部署方式，通过减少MoE部分参与GroupedMatmul计算的路由专家数量，以降低单次Decode耗时。然而，在分析EP256配置下的profiling时发现，GroupedMatmul算子执行前出现了额外的Transpose操作，导致性能反而出现较大劣化。
 
-![](./figures/deepseekr1/image37.png)
+![](./figures/image37.png)
 
-![](./figures/deepseekr1/image38.png)
+![](./figures/image38.png)
 
 上图的profiling信息显示，单层MoE中的Transpose算子总耗时**高达175us**。经过模型代码排查、对比EP128无Transpose场景的dump图，发现问题由以下原因导致：
 
 - 在EP256单卡1专家的配置下，由于专家权重shape中存在值为1的维度，导致针对权重的Transpose算子触发TorchAir的"enable\_view\_optimize"优化（详见[PyTorch图模式使用指导 > View类算子优化功能](https://www.hiascend.com/document/detail/zh/Pytorch/710/modthirdparty/torchairuseguide/torchair_00033.html)）而被插入了额外的Reshape算子。
-  ![](./figures/deepseekr1/image39.png)
+  ![](./figures/image39.png)
 
 - 新引入的Reshape算子使融合Pass "GroupedMatmulTransFusionPass"无法检测到其预定目标模式，最终导致Transpose算子被保留到图执行阶段。
-  ![](./figures/deepseekr1/image40.png)
+  ![](./figures/image40.png)
 
  
 
@@ -715,7 +715,7 @@ DeepSeek-V3模型普遍使用大EP的推理部署方式，通过减少MoE部分�
 
 DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算子用于批量处理多个矩阵乘法操作，通过将具有相同或相似形状的矩阵乘法操作组合在一起，减少内存访问开销和计算资源的浪费，从而提高计算效率。对应的torch\_npu接口“npu\_grouped\_matmul”依赖入参“group\_list”获取每个子矩阵运算中实际M轴的大小，并支持以“**累加和数列**”或“**逐维度指定**”两种形式提供这一参数。vLLM-Ascend的模型脚本中使用了“累加和数列”模式而非后者，因而在MoE层中引入了用于实现累加和的Cumsum算子。
 
-![](./figures/deepseekr1/image41.png)
+![](./figures/image41.png)
 
 实际上，这一累加过程是多余的，通过配置"npu\_grouped\_matmul"接口的"group\_list\_type=1"参数可以将group\_list按照"逐维度指定"的方式提供，从而省去Cumsum算子的开销。
 
@@ -723,7 +723,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 优化项"enable\_view\_optimize"在TorchAir中默认开启，目标是为了融合连续的view类算子。由于DeepSeek-V3网络不涉及这一目标场景，所以选择将其在"additional\_config"配置中显式关闭，避免因此导致的Transpose/Gmm算子融合失败。
 
-![](./figures/deepseekr1/image42.png)
+![](./figures/image42.png)
 
 同时，修改vLLM-ascend的网络脚本，调整"npu\_grouped\_matmul"接口的"group\_list\_type"配置，以消除原本的Cumsum操作。
 
@@ -731,7 +731,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 调整TorchAir的优化功能开关"enable\_view\_optimize"和torch\_npu接口"npu\_grouped\_matmul"的配置后，MoE阶段关键路径上的Transpose/Cumsum算子即被消除。尽管GroupedMatmul算子耗时有所增加，仍能获得单层158us，整网9ms的Decode性能收益，在3K推理长度下可将rollout总耗时优化**超过28s**。
 
-![](./figures/deepseekr1/image43.png)
+![](./figures/image43.png)
 
  
 
@@ -741,7 +741,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 在对Decode模型侧进行较大性能优化之后，纯模型耗时在整体Rollout中的占比显著减低，这意味着如果仅仅优化纯模型的性能，后续在整体Rollout吞吐量的提升上面将面临较大局限。基于此，结合当时Rollout耗时373s（对应吞吐547 token/p/s）的数据，对整体RL推理过程进行了重新拆解与分析，结果如下：
 
-![](./figures/deepseekr1/image44.png)
+![](./figures/image44.png)
 
 上图中可以看到，**Prefill和Decode的纯模型计算时间在RL推理的整体耗时占比已不足60%，其余40%耗时集中在Decode的前后处理、vLLM V1 Engine调度以及RL训推切换前权重内存卸载等调度操作上**。为了进一步提升Rollout性能，需要从单纯关注模型性能优化转向优化此类推理场景下的“调度bound”问题。经过深入分析，得到如下结果：
 1.  vLLM Sche部分：耗时集中在调度前的全卡DP域间的EOS检测同步，通过CPU的AllReduce通信来获取"has\_unfinished\_requests"的结果，决定是否需要执行dummy\_batch。此CPU通信单次平均耗时10ms，推理3000次后叠加**耗时高达30s**。
@@ -754,7 +754,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 针对全卡DP间EOS检测、P/D检测同步的CPU AllReduce通信，我们计划将其从Gloo后端的CPU侧通信修改为HCCL后端的NPU侧通信，相关原理示意图如下：
 
-![](./figures/deepseekr1/image45.png)
+![](./figures/image45.png)
 
 此处AllReduce通信实际通信量很小，仅为字节级别，所以Atlas A3系列产品的全互联HCCS高通信带宽对我们并无助益，我们关注的是CPU的TCP协议通信和NPU的HCCS通信的时延对比：
 
@@ -771,17 +771,17 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 
 在Atlas A3 128卡环境中，将vLLM调度前处理的"has\_unfinished\_requests"函数，以及Decode前处理的"\_get\_forward\_metadata\_across\_dp"函数中allreduce通信的后端由Gloo修改为HCCL之后，单通信耗时由原14ms优化到了3ms以内，如下图所示：
 
-![](./figures/deepseekr1/image46.png)
+![](./figures/image46.png)
 
 在Atlas A3 128卡上DSR1-671B完整网络上取得的收益如下：
 
 1.  推理吞吐由519 tps优化到618 tps。
 
 2.  推理耗时由385s优化到322s ，收益约为60s （2次通信\* 10ms 优化\* 3072次Decode推理），提升比例接近20%，效果显著。
-![](./figures/deepseekr1/image47.png)
+![](./figures/image47.png)
 
-<span id="foot1"><a href="#ref1">[1]</a> : 
+<span id="foot1"><a href="#ref1">[1]</a> :
 此处使能的特性包含本文[5.1](#5.1-复用MindSpeed训练优化)、[6.1](#6.1-TorchAir整图下沉)、[6.2](#6.2-MoE/MLA多流)、[6.4](#6.4-KVCache支持NZ)、[6.5](#6.5-大EP的冗余算子消除)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
 
-<span id="foot2"><a href="#ref2">[2]</a> : 
+<span id="foot2"><a href="#ref2">[2]</a> :
 此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/rl_train/deepseek/README.md)仓库开源的RL训练recipe代码。
