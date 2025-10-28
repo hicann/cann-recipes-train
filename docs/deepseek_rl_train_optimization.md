@@ -51,7 +51,7 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 
 #### 1.4.1 加载真实权重
 
-加载DeepSeek-V3-Base真实权重，限制最大推理长度为3K并使能部分性能优化，验证实际负载情况下的训推性能，系统吞吐达到125.7TPS/卡[^1]。
+加载DeepSeek-V3真实权重，限制最大推理长度为3K并使能部分性能优化，验证实际负载情况下的训推性能，系统吞吐达到125.7TPS/卡<a id="ref1"></a><a href="#foot1">[1]</a>。
 
 <table border=1px">
 <tr>
@@ -78,9 +78,9 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 <td><p>vLLM+vLLM-Ascend</p></td>
 <td><p>Megatron+MindSpeed</p></td>
 <td>deepscaler</td>
-<td>27</td>
-<td>75</td>
-<td>2553</td>
+<td>2</td>
+<td>77.8</td>
+<td>1576.6</td>
 <td>512</td>
 <td>16</td>
 <td><p>256die</p>
@@ -107,13 +107,13 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 <p><strong>(tokens/s/卡)</strong></p></th>
 </tr>
 <tr>
-<td colspan="5" align="center">754.71</td>
-<td align="center">495.1</td>
-<td colspan="2" align="center">87.9</td>
-<td rowspan="3" align="center">1338</td>
-<td rowspan="3" align="center">288.3</td>
-<td rowspan="3" align="center">339.8</td>
-<td rowspan="3" align="center">125.7</td>
+<td colspan="5" align="center">523.38</td>
+<td align="center">319.3</td>
+<td colspan="2" align="center">17</td>
+<td rowspan="3" align="center">859.68</td>
+<td rowspan="3" align="center">271.05</td>
+<td rowspan="3" align="center">331.6</td>
+<td rowspan="3" align="center">123.16</td>
 </tr>
 <tr>
 <td>rollout (s)</td>
@@ -126,20 +126,20 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 <td>offload等(s)</td>
 </tr>
 <tr>
-<td align="center">495.4</td>
-<td align="center">134.0</td>
-<td align="center">116.7</td>
-<td align="center">8.4</td>
+<td align="center">373.65</td>
+<td align="center">0</td>
+<td align="center">144.5</td>
+<td align="center">5.0</td>
 <td align="center">0.21</td>
-<td align="center">495.1</td>
-<td align="center">67.6</td>
-<td align="center">20.3</td>
+<td align="center">319.3</td>
+<td align="center">11.5</td>
+<td align="center">5.5</td>
 </tr>
 </table>
 
 #### 1.4.2 加载随机权重
 
-随机初始化权重，固定推理长度为3K，强制专家负载均衡并使能全部性能优化，测试理想情况下的峰值性能，系统吞吐达到250.2TPS/卡[^2]。
+随机初始化权重，固定推理长度为3K，强制专家负载均衡并使能全部性能优化，测试理想情况下的峰值性能，系统吞吐达到250.2TPS/卡<a id="ref2"></a><a href="#foot2">[2]</a>。
 
 <table border=1px">
 <tr>
@@ -424,7 +424,7 @@ get\_cached\_tensors()中可能涉及AlltoAllV通信，具体有两种情况：
 
 在另一组相同规模的实验中，保持其他变量不变，对比第3步训练打屏性能数据，验证端到端收益情况如下，结果达到了预期目标。
 
-|  |  优化前 | 优化后启动最大时差    | 收益    |
+|  |  优化前单阶段耗时 | 优化后单阶段耗时    | 收益    |
 | ----- | ---- |---- | ---- |
 | timing_s/ref（s） |  156.804  | 105.061 | ~33.0% |
 | timing_s/update_actor（s） | 400.891 | 334.152 | ~16.6% |
@@ -780,6 +780,8 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 2.  推理耗时由385s优化到322s ，收益约为60s （2次通信\* 10ms 优化\* 3072次Decode推理），提升比例接近20%，效果显著。
 ![](./figures/deepseekr1/image47.png)
 
+<span id="foot1"><a href="#ref1">[1]</a> : 
+此处使能的特性包含本文[5.1](#5.1-复用MindSpeed训练优化)、[6.1](#6.1-TorchAir整图下沉)、[6.2](#6.2-MoE/MLA多流)、[6.4](#6.4-KVCache支持NZ)、[6.5](#6.5-大EP的冗余算子消除)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
 
-[^1]: 此处使能的特性包含本文[5.1](###5.1 复用MindSpeed训练优化)、[6.1](###6.1 TorchAir整图下沉)、[6.2](###6.2 MoE/MLA多流)、[6.4](###6.4 KVCache支持NZ)、[6.5](###6.5 大EP的冗余算子消除)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
-[^2]: 此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/rl_train/deepseek/README.md)仓库开源的RL训练recipe代码。
+<span id="foot2"><a href="#ref2">[2]</a> : 
+此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/rl_train/deepseek/README.md)仓库开源的RL训练recipe代码。
