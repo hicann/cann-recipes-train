@@ -85,7 +85,7 @@ def compute_format_score(solution_str) -> float:
     # 2. Format Score (0.2 Points)
     format_score = _calculate_basic_format_score(solution_str)
 
-    if not _check_tag_order_and_content(solution_str, format_score):
+    if not _check_tag_order(solution_str, format_score):
         return 0.0
 
     return format_score
@@ -126,7 +126,7 @@ def _calculate_basic_format_score(solution_str: str) -> float:
     return format_score
 
 
-def _check_tag_order_and_content(solution_str: str, format_score: float) -> bool:
+def _check_tag_order(solution_str: str, format_score: float) -> bool:
     think_start = solution_str.find("<think>")
     think_end = solution_str.find("</think>")
     answer_start = solution_str.find("<answer>")
@@ -139,29 +139,6 @@ def _check_tag_order_and_content(solution_str: str, format_score: float) -> bool
     )
     if invalid_order:
         return False
-
-    pattern = r"^\s*<think>.*?</think>\s*<answer>.*?</answer>\s*$"
-    if re.match(pattern, solution_str, re.DOTALL):
-        format_score = min(format_score + 0.05, 0.2)
-
-    all_tags_present = (
-        think_start != -1 and
-        think_end != -1 and
-        answer_start != -1 and
-        answer_end != -1
-    )
-
-    if all_tags_present:
-        think_content = solution_str[think_start + len("<think>"):think_end].strip()
-        answer_content = solution_str[answer_start + len("<answer>"):answer_end].strip()
-
-        content_empty = not think_content or not answer_content
-        if content_empty:
-            format_score *= 0.5
-
-        think_shorter_than_answer = len(think_content) < len(answer_content)
-        if think_shorter_than_answer:
-            format_score = 0.0
 
     return True
 
