@@ -31,7 +31,7 @@ cann-recipes-train仓库旨在针对LLM与多模态模型训练业务中的典�
 ## 📝相关信息
 
 - [贡献指南](./CONTRIBUTION.md)
-- [许可证]
+- 许可证
 
-cann-recipes-train仓涉及的模型，如模型目录下存在License的，以该License为准。如模型目录下不存在License的，遵循Apache 2.0许可证，对应许可证文本可查阅[LICENSE](./LICENSE)
+    cann-recipes-train仓涉及的模型，如模型目录下存在License的，以该License为准。如模型目录下不存在License的，遵循Apache 2.0许可证，对应许可证文本可查阅[LICENSE](./LICENSE)
 - [免责声明](DISCLAIMER.md)
