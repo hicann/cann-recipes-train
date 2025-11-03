@@ -1,0 +1,56 @@
+From 4bf69edc68223abbcfbec98a72fb8da16d9a0e25 Mon Sep 17 00:00:00 2001
+From: z00470826 <zhangying134@huawei.com>
+Date: Tue, 28 Oct 2025 11:14:21 +0800
+Subject: [PATCH] FIX-KVcache-NZ
+
+---
+ vllm_ascend/attention/mla_v1.py | 26 ++------------------------
+ 1 file changed, 2 insertions(+), 24 deletions(-)
+
+diff --git a/vllm_ascend/attention/mla_v1.py b/vllm_ascend/attention/mla_v1.py
+index 10b67462..79b5ec56 100644
+--- a/vllm_ascend/attention/mla_v1.py
++++ b/vllm_ascend/attention/mla_v1.py
+@@ -949,7 +949,7 @@ class AscendMLAImpl(MLAAttentionImpl):
+         kv = self.kv_a_proj_with_mqa(hidden_states)[0]
+         # npu_kv_rmsnorm_rope_cache needs [B, N, S, D]
+         kv = kv.view(B, N, S, self.kv_lora_rank + self.qk_rope_head_dim)
+-        cache_mode = "PA_BLK_NZ" if self.enable_kv_nz else "PA"
++        cache_mode = "PA_NZ" if self.enable_kv_nz else "PA"
+         _, _, k_pe, k_nope = torch_npu.npu_kv_rmsnorm_rope_cache(
+             kv,
+             self.kv_a_layernorm.weight,
+@@ -1190,29 +1190,7 @@ class AscendMLAImpl(MLAAttentionImpl):
+         assert len(
+             kv_cache
+         ) > 1, "the number of kv cache should be greater than 1, namely (nope_cache and rope_cache)"
+-        if self.torchair_graph_enabled:
+-            if kv_cache[0].numel(
+-            ) > 0 and attn_metadata.attn_state == AscendAttentionState.PrefillNoCache:
+-                slots = attn_metadata.slot_mapping
+-                # NOTE: Separate the kv cache in advance to avoid OOM or other issues
+-                torch_npu._npu_reshape_and_cache(key=kv_c_normed_prefill.view(
+-                    num_tokens, self.num_kv_heads, -1),
+-                                                 value=prefill_k_pe,
+-                                                 key_cache=kv_cache[0],
+-                                                 value_cache=kv_cache[1],
+-                                                 slot_indices=slots)
+-
+-            if kv_cache[0].numel(
+-            ) > 0 and attn_metadata.attn_state == AscendAttentionState.ChunkedPrefill and has_decode:
+-                slots = attn_metadata.slot_mapping[:num_decode_tokens]
+-                k_c_normed_decode = kv_c_normed[:num_decode_tokens]
+-                torch_npu._npu_reshape_and_cache(key=k_c_normed_decode.view(
+-                    num_decode_tokens, self.num_kv_heads, -1),
+-                                                 value=decode_k_pe,
+-                                                 key_cache=kv_cache[0],
+-                                                 value_cache=kv_cache[1],
+-                                                 slot_indices=slots)
+-        else:
++        if not self.torchair_graph_enabled:
+             kv_c_normed = kv_c_normed.view(
+                 [num_actual_toks, self.num_kv_heads, -1])
+             torch_npu._npu_reshape_and_cache(
+-- 
+2.24.0.windows.2
+

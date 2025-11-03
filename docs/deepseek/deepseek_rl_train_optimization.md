@@ -681,7 +681,7 @@ NZ是NPU上的一种特殊的私有数据格式，如下图所示，其将完整
 
 #### 6.4.2 优化方案
 
-在Prefill与Decode阶段分别指定KvRmsNormRopeCache算子的cache\_mode参数为"PA\_BLK\_NZ"和"PA\_NZ"，即可按照NZ格式存储KVCache。同时亦需要对KV作相关变换，以满足NZ格式场景下FA算子对输入参数shape及layout的约束。
+在Prefill与Decode阶段指定KvRmsNormRopeCache算子的cache\_mode参数为"PA\_NZ"，即可按照NZ格式存储KVCache。同时亦需要对KV作相关变换，以满足NZ格式场景下FA算子对输入参数shape及layout的约束。
 
 #### 6.4.3 优化结果
 

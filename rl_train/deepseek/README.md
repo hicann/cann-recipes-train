@@ -239,6 +239,7 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    # 下载vLLM-Ascend源码
    git clone -b v0.9.1rc2 https://github.com/vllm-project/vllm-ascend.git
    cd vllm-ascend
+   git apply ../cann-recipes-train/rl_train/deepseek/vllm_ascend_patches/0001-FIX-KVcache-NZ.patch
    cp -r vllm_ascend ../cann-recipes-train/rl_train/deepseek/
    cd ..
 
