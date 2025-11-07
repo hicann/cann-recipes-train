@@ -56,6 +56,8 @@
    - 二进制算子包：`Ascend-cann-kernels-${chip_type}_${version}_linux-${arch}.run`
    - NNAL加速包：`Ascend-cann-nnal_${version}_linux-${arch}.run`
 
+   软件包文件名中 `${version}` 表示CANN包版本号，`${arch}` 表示CPU架构（如aarch64、x86_64）。
+
 3. 下载项目源码并安装依赖的 python 库。
 
    ```shell

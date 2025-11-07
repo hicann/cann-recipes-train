@@ -1,5 +1,5 @@
 # Adapted from
-# https://github.com/volcengine/verl/blob/main/verl/models/mcore/model_initializer.py
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/models/mcore/model_initializer.py
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #

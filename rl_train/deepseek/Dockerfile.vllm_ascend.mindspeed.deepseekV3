@@ -36,7 +36,7 @@ RUN source /usr/local/Ascend/ascend-toolkit/set_env.sh && \
     source /usr/local/Ascend/nnal/atb/set_env.sh && \
     source /usr/local/Ascend/nnal/asdsip/set_env.sh && \
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/ascend-toolkit/latest/`uname -i`-linux/devlib && \
-    git clone -b master https://gitee.com/ascend/apex.git && \
+    git clone -b master https://gitcode.com/ascend/apex.git && \
     cd apex/ && bash scripts/build.sh --python=3.11 && \
     cd apex/dist/ && \
     python3 -m pip install --upgrade apex-0.1+ascend-*.whl
@@ -52,13 +52,13 @@ RUN git clone https://github.com/NVIDIA/Megatron-LM.git && \
     git checkout core_r0.8.0
 
 # MindSpeed
-RUN git clone https://gitee.com/ascend/MindSpeed.git && \
+RUN git clone https://gitcode.com/ascend/MindSpeed.git && \
     cd MindSpeed && \
     git checkout v2.0.0_core_r0.8.0 && \
     python3 -m pip install -r requirements.txt
 
 # MindSpeed-LLM
-RUN git clone https://gitee.com/ascend/MindSpeed-LLM.git && \
+RUN git clone https://gitcode.com/ascend/MindSpeed-LLM.git && \
     cd MindSpeed-LLM && \
     git checkout v2.0.0
 

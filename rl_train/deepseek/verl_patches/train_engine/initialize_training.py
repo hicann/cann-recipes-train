@@ -1,5 +1,5 @@
 # Adapted from
-# https://gitcode.com/Ascend/MindSpeed-RL/blob/master/cli/train_grpo.py
+# https://gitcode.com/Ascend/MindSpeed-RL/blob/2.1.0/cli/train_grpo.py
 # Copyright (c) 2025, HUAWEI CORPORATION. All rights reserved.
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 #

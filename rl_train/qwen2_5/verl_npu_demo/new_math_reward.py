@@ -1,10 +1,10 @@
 # coding=utf-8
 # Adapted from Bytedance Ltd. and/or its affiliates' implementation at:
-# https://github.com/volcengine/verl/blob/main/verl/utils/reward_score/math_reward.py
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/utils/reward_score/math.py
 # which is derived from EleutherAI's original work available at:
 # https://github.com/EleutherAI/lm-evaluation-harness/blob/main/lm_eval/tasks/hendrycks_math/utils.py
 # Additional references are made to OpenCompass Authors' work at:
-# https://github.com/open-compass/opencompass/blob/main/opencompass/evaluator/math_evaluator.py
+# https://github.com/open-compass/opencompass/blob/0.5.0/opencompass/evaluator/math_evaluator.py
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates. All rights reserved.
 # Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.

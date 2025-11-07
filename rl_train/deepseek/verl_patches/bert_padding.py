@@ -1,4 +1,4 @@
-# This code is copied from https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/bert_padding.py
+# This code is copied from https://github.com/Dao-AILab/flash-attention/blob/v2.7.3/flash_attn/bert_padding.py
 
 import torch
 import torch.nn.functional as F

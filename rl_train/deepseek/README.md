@@ -9,11 +9,42 @@
 |---------------------|----------|-----|-----------|--------- | ----------|------------|---------|
 | DeepSeek-V3-671B    | Atlas A3 128卡 | 512 | 16        | 2 |  1024              | 3072       | 120     |
 
-
 ## 硬件要求
 产品型号：Atlas A3 系列
 
 最少卡数：128张A3
+
+## 目录结构说明
+```bash
+├─megatron_patches            # megatron库相关patch目录
+│  └─core                     # 对应megatron/core目录
+│      └─tensor_parallel      # 对应megatron/core/tensor_parallel目录，其中有相关patch代码
+├─mindspeed_patches           # mindspeed库相关patch目录
+│  └─core                     # 对应mindspeed/core目录
+│      └─tensor_parallel      # 对应mindspeed/core/tensor_parallel目录，其中有相关patch代码
+├─verl_patches                # verl库相关patch目录
+│  ├─features                 # 重要独立特性目录
+│  │  └─rollout_optimize      # 推理负载均衡优化特性目录
+│  ├─models                   # 对应verl/models目录，其中有相关patch代码
+│  │  └─mcore                 # 对应verl/models/mcore目录，其中有相关patch代码
+│  ├─scripts                  # 重要脚本目录，包含训练启动、数据文件转化、权重转换等脚本
+│  │  └─internal              # 训练启动脚本所调用的子脚本目录，其中可配置verl训练的重要参数
+│  ├─single_controller        # 对应verl/single_controller目录，其中有相关patch代码
+│  │  └─base                  # 对应verl/single_controller/base目录，其中有相关patch代码
+│  │      └─megatron          # 对应verl/single_controller/base/megatron目录，其中有相关patch代码
+│  ├─trainer                  # 对应verl/trainer目录，其中有相关patch代码
+│  │  ├─config                # 对应verl/trainer/config目录，其中有相关patch代码
+│  │  └─ppo                   # 对应verl/trainer/ppo目录，其中有相关patch代码
+│  ├─train_engine             # 训练引擎相关的重要patch代码目录
+│  ├─utils                    # 对应verl/utils目录，其中有相关patch代码
+│  │  ├─megatron              # 对应verl/utils/megatron目录，其中有相关patch代码
+│  │  └─reward                # 对应verl/utils/reward_score目录，其中有相关patch代码
+│  └─workers                  # 对应verl/workers目录，其中有相关patch代码
+│      ├─actor                # 对应verl/workers/actor目录，其中有相关patch代码
+│      ├─sharding_manager     # 对应verl/workers/sharding_manager目录，其中有相关patch代码
+│      └─vllm_rollout         # 对应verl/workers/rollout/vllm_rollout目录，其中有相关patch代码
+└─vllm_ascend_patches         # vllm_ascend相关patch代码目录
+```
 
 ## 基于Dockerfile构建环境
 > 环境搭建可以基于Dockerfile快速实现，我们已经在Dockerfile里配置了必要的昇腾软件和其他第三方软件的依赖。如果遇到网络不通等问题，也可以参考附录中的[手动准备环境](#手动准备环境)章节。
@@ -189,19 +220,21 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
       - 二进制算子包：`Atlas-A3-cann-kernels_${version}_linux-${arch}.run`
       - NNAL加速包：`Ascend-cann-nnal_${version}_linux-${arch}.run`
 
+      软件包文件名中 `${version}` 表示CANN包版本号，`${arch}` 表示CPU架构（如aarch64、x86_64）。
+
    - **Ascend Extension for PyTorch：7.1.0**
 
       Ascend Extension for PyTorch（torch_npu）为支撑PyTorch框架运行在NPU上的适配插件，本样例支持的Ascend Extension for PyTorch版本为`7.1.0`，PyTorch版本为`2.5.1`。
 
-      请从[软件包下载地址](https://www.hiascend.com/developer/download/community/result?module=pt+cann&pt=7.1.0&cann=8.2.RC1)下载`Ascend Extension for PyTorch 7.1.0-PyTorch2.5.1`软件包，并参考[Ascend Extension for PyTorch安装文档](https://www.hiascend.com/document/detail/zh/Pytorch/710/configandinstg/instg/insg_0004.html)进行安装。
+      请参考[Ascend Extension for PyTorch安装文档](https://www.hiascend.com/document/detail/zh/Pytorch/710/configandinstg/instg/insg_0004.html#ZH-CN_TOPIC_0000002389661329__zh-cn_topic_0000001800921750_zh-cn_topic_0000001731730474_section1945921143716)安装相应版本的torch_npu插件。
 
    - **Apex**
 
-      本样例需要安装apex库，请参考[apex](https://gitee.com/ascend/apex)构建安装。
+      本样例需要安装apex库，请参考[apex](https://gitcode.com/ascend/apex)构建安装。
 
    - **Jemalloc**
 
-      本样例需要安装jemalloc库，请参考[高性能内存库jemalloc安装](https://gitcode.com/Ascend/MindSpeed-RL/blob/master/docs/install_guide.md#%E9%AB%98%E6%80%A7%E8%83%BD%E5%86%85%E5%AD%98%E5%BA%93-jemalloc-%E5%AE%89%E8%A3%85)。
+      本样例需要安装jemalloc库，请参考[高性能内存库jemalloc安装](https://gitcode.com/Ascend/MindSpeed-RL/blob/2.1.0/docs/install_guide.md#%E9%AB%98%E6%80%A7%E8%83%BD%E5%86%85%E5%AD%98%E5%BA%93-jemalloc-%E5%AE%89%E8%A3%85)。
 
 3. 下载项目源码并安装依赖的python库。
     ```bash
@@ -251,14 +284,14 @@ bash ./verl_patches/scripts/train_deepseekv3_256die_true_weight.sh
    cd ..
 
    # 下载MindSpeed源码
-   git clone https://gitee.com/ascend/MindSpeed.git
+   git clone https://gitcode.com/ascend/MindSpeed.git
    cd MindSpeed
    git checkout v2.0.0_core_r0.8.0
    cp -r mindspeed ../cann-recipes-train/rl_train/deepseek/
    cd ..
 
    # 下载MindSpeed-LLM源码
-   git clone https://gitee.com/ascend/MindSpeed-LLM.git
+   git clone https://gitcode.com/ascend/MindSpeed-LLM.git
    cd MindSpeed-LLM
    git checkout v2.0.0
    cp -r mindspeed_llm ../cann-recipes-train/rl_train/deepseek/

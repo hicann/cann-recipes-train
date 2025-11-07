@@ -1,5 +1,5 @@
 # Adapted from
-# https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py
+# https://github.com/vllm-project/vllm/blob/v0.9.1/vllm/v1/engine/core.py
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 #

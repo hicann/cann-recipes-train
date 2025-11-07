@@ -1,5 +1,5 @@
 # Adapted from
-# https://gitcode.com/Ascend/MindSpeed/blob/master/mindspeed/core/pipeline_parallel/p2p_communication.py
+# https://gitcode.com/Ascend/MindSpeed/blob/v2.0.0_core_r0.8.0/mindspeed/core/pipeline_parallel/p2p_communication.py
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 # Copyright (c) 2024, Huawei Technologies Co., Ltd.  All rights reserved.
 #

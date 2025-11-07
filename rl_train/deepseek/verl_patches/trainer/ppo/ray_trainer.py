@@ -1,5 +1,5 @@
 # Adapted from
-# https://github.com/volcengine/verl/blob/v0.2.0.post1/verl/trainer/ppo/ray_trainer.py
+# https://github.com/volcengine/verl/blob/v0.4.0/verl/trainer/ppo/ray_trainer.py
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #

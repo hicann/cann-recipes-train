@@ -1,6 +1,6 @@
 # coding=utf-8
 # Adapted from
-# https://github.com/volcengine/verl/blob/main/examples/grpo_trainer/run_qwen2_5_7b_grpo_npu.sh
+# https://github.com/volcengine/verl/blob/v0.4.0/examples/grpo_trainer/run_qwen2-7b_math_megatron.sh
 # Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 # Copyright 2024 Bytedance Ltd. and/or its affiliates. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License");

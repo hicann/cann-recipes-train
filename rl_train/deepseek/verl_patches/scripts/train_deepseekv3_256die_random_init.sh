@@ -46,6 +46,10 @@ export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
 export WORLD_SIZE=$(($NNODES*$NPUS_PER_NODE))
 export MASTER_PORT=29444
 
+export TP_SOCKET_IFNAME=$SOCKET_IFNAME
+export HCCL_SOCKET_IFNAME=$SOCKET_IFNAME
+export GLOO_SOCKET_IFNAME=$SOCKET_IFNAME
+
 export PROFILE_UPDATE=0               # enable profiling sampling in the update stage
 export ASCEND_LAUNCH_BLOCKING=0       # debug usage, which seriously affects performance after use, but the error stack is accurate
 

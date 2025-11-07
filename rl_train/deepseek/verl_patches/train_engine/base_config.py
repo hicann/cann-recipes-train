@@ -1,5 +1,5 @@
 # Adapted from
-# https://gitcode.com/ascend/MindSpeed-RL/blob/2.0.0/mindspeed_rl/config_cls/base_config.py
+# https://gitcode.com/ascend/MindSpeed-RL/blob/2.1.0/mindspeed_rl/config_cls/base_config.py
 # Copyright (c) 2025, HUAWEI CORPORATION. All rights reserved.
 
 
