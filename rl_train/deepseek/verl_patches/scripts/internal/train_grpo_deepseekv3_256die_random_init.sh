@@ -67,5 +67,5 @@ python3 -m verl.trainer.main_ppo_npu --config-path=config \
     trainer.n_gpus_per_node=16 \
     trainer.nnodes=16 \
     trainer.save_freq=-1 \
-    trainer.test_freq=5 \
+    trainer.test_freq=-1 \
     trainer.total_epochs=1 $@

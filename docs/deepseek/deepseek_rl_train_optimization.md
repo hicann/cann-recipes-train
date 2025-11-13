@@ -51,7 +51,7 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 
 #### 1.4.1 加载真实权重
 
-加载DeepSeek-V3真实权重，限制最大推理长度为3K并使能部分性能优化，验证实际负载情况下的训推性能，系统吞吐达到125.7TPS/卡<a id="ref1"></a><a href="#foot1">[1]</a>。
+加载DeepSeek-V3真实权重，限制最大推理长度为3K并使能部分性能优化，验证实际负载情况下的训推性能，系统吞吐达到123.16TPS/卡<a id="ref1"></a><a href="#foot1">[1]</a>。
 
 <table border=1px">
 <tr>
@@ -83,8 +83,8 @@ vLLM Ascend通过硬件插件化机制解耦了框架与硬件依赖，用户无
 <td>1576.6</td>
 <td>512</td>
 <td>16</td>
-<td><p>256die</p>
-<p>DP128TP2EP256</p></td>
+<td><p>256die</p><p>2个DP实例</p>
+<p>DP64TP2EP128</p></td>
 <td><p>256die</p>
 <p>TP4EP8PP8</p></td>
 <td><p>256die</p>
@@ -781,7 +781,7 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 ![](./figures/image47.png)
 
 <span id="foot1"><a href="#ref1">[1]</a> :
-此处使能的特性包含本文[5.1](#5.1-复用MindSpeed训练优化)、[6.1](#6.1-TorchAir整图下沉)、[6.2](#6.2-MoE/MLA多流)、[6.4](#6.4-KVCache支持NZ)、[6.5](#6.5-大EP的冗余算子消除)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
+此处使能的特性包含本文[5.1](#5.1-复用MindSpeed训练优化)、[6.1](#6.1-TorchAir整图下沉)、[6.2](#6.2-MoE/MLA多流)、[6.4](#6.4-KVCache支持NZ)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
 
 <span id="foot2"><a href="#ref2">[2]</a> :
 此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/rl_train/deepseek/README.md)仓库开源的RL训练recipe代码。

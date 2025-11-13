@@ -74,7 +74,7 @@ export VLLM_USE_V1=1                            # use the V1 engine of vLLM
 export VLLM_ENABLE_GRAPH_MODE=1                 # enable vLLM graph mode
 export HCCL_OP_EXPANSION_MODE=AIV               # enable the communication mode of AIV
 export VLLM_ENABLE_MC2=1                        # enable MC2 communication
-export VLLM_DP_SIZE=128                         # configure the DP size of vLLM
+export VLLM_DP_SIZE=64                          # configure the DP size of vLLM
 export VLLM_ENABLE_FIX_ROUTE=0                  # 0:Turn off the fixed route of vLLM; 1:enable the fixed route of vLLM
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode
 export VLLM_ASCEND_MODEL_EXECUTE_TIME_OBSERVE=0
