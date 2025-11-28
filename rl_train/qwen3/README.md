@@ -34,13 +34,14 @@
 |verl|[0006-verl-feature-weight_converter_alltoall_overlap.patch](patches/verl/0006-verl-feature-weight_converter_alltoall_overlap.patch)|完善Mcore到HF模型参数名转换逻辑|
 |verl|[0007-verl-feature-onload_offload.patch](patches/verl/0007-verl-feature-onload_offload.patch)|1.添加TorchAir图模式相关配置 2.由于NPU上vLLM的sleep模式可能存在内存卸载不干净的问题，改为手动实现NPU上Rollout模型及KV Cache的卸载和模型加载|
 |verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
+|verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|【手动卸载KV Cache】实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
 |vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|【手动卸载KV Cache】避免在KV Cache初始化时多次调用AttentionBackend初始化|
 |vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高|
 |vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
-|vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配
-|patches|[0001-feature-model-converter.patch](patches/0001-feature-model-converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑
+|vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
+|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 
 
 ## 基于Dockerfile构建环境
