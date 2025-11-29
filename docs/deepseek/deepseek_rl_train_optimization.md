@@ -785,4 +785,4 @@ DeepSeek-V3网络的多路由专家计算由GroupedMatmul算子实现，该算�
 此处使能的特性包含本文[5.1](#5.1-复用MindSpeed训练优化)、[6.1](#6.1-TorchAir整图下沉)、[6.2](#6.2-MoE/MLA多流)、[6.4](#6.4-KVCache支持NZ)，相关代码参见[verl](https://github.com/volcengine/verl/pull/3427)与[vLLM-Ascend](https://github.com/vllm-project/vllm-ascend/tree/v0.9.1rc2)。
 
 <span id="foot2"><a href="#ref2">[2]</a> :
-此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/rl_train/deepseek/README.md)仓库开源的RL训练recipe代码。
+此处使能了本文3～6章节所描述的所有优化特性，其中推理优化已合入vLLM-Ascend主线，其他优化可以参考[GitCode](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/deepseek/README.md)仓库开源的RL训练recipe代码。
