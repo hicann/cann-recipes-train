@@ -65,6 +65,7 @@ export ALL_TO_ALL_RESHARD=1
 export USE_ALLTOALL_OVERLAP=1
 export VERL_LOGGING_LEVEL=DEBUG
 export VLLM_ENABLE_EPLB=0                   # 0: disable eplb, 1: enable eplb
+export USE_HDP=0                            # 0: disable hdp, 1: enable hdp
 
 export PYTHONUNBUFFERED=x
 
