@@ -1,7 +1,7 @@
-From 09a887b199b2d1270eb8f81f2c472785d0f7f592 Mon Sep 17 00:00:00 2001
+From ac46c5d461f6f23c7a06e11cca5509839e471613 Mon Sep 17 00:00:00 2001
 From: caojingyi <caojingyi@noreply.gitcode.com>
-Date: Wed, 19 Nov 2025 19:49:39 +0800
-Subject: [PATCH] modify torch_fused_moe
+Date: Mon, 17 Nov 2025 16:24:30 +0800
+Subject: [PATCH] Update vllm_ascend: chunk moe
 For MoE computation scenarios, implement chunk processing optimization to address excessive peak memory
 in prefill phase.
 
@@ -10,7 +10,7 @@ in prefill phase.
  1 file changed, 52 insertions(+)
 
 diff --git a/llm_rl/qwen3/vllm_ascend/torchair/ops/torchair_fused_moe.py b/llm_rl/qwen3/vllm_ascend/torchair/ops/torchair_fused_moe.py
-index 5514ce1..2399870 100644
+index 5514ce1..e1cf384 100644
 --- a/llm_rl/qwen3/vllm_ascend/torchair/ops/torchair_fused_moe.py
 +++ b/llm_rl/qwen3/vllm_ascend/torchair/ops/torchair_fused_moe.py
 @@ -54,6 +54,55 @@ from vllm_ascend.utils import (AscendSocVersion, dispose_tensor,
@@ -18,7 +18,7 @@ index 5514ce1..2399870 100644
  
  
 +def chunk_moe_decorator(fused_experts_func):
-+    CHUNK_MOE_SIZE = 512
++    chunk_moe_size = int(os.environ.get('VLLM_CHUNK_MOE_SIZE', 512))
 +
 +    def wrapper(hidden_states, topk_weights, topk_ids, *args, **kwargs):
 +        final_hidden_states = torch.zeros_like(hidden_states)
@@ -28,7 +28,7 @@ index 5514ce1..2399870 100644
 +        tp_size = get_tensor_model_parallel_world_size()
 +        max_tokens = (ctx.max_tokens_across_dp + tp_size - 1) // tp_size
 +
-+        if max_tokens < CHUNK_MOE_SIZE:
++        if max_tokens < chunk_moe_size:
 +            mlp_hidden_states = fused_experts_func(
 +                hidden_states=hidden_states,
 +                topk_weights=topk_weights,
@@ -39,8 +39,8 @@ index 5514ce1..2399870 100644
 +            return mlp_hidden_states
 +            
 +        num_tokens = hidden_states.size(0)
-+        for chunk_start in range(0, max_tokens, CHUNK_MOE_SIZE):
-+            chunk_end = min(chunk_start + CHUNK_MOE_SIZE, max_tokens)
++        for chunk_start in range(0, max_tokens, chunk_moe_size):
++            chunk_end = min(chunk_start + chunk_moe_size, max_tokens)
 +            chunk_start = min(chunk_start, num_tokens - 1)
 +            chunk_end = min(chunk_end, num_tokens)
 +            chunk_hidden_states = hidden_states[chunk_start:chunk_end]

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 #!/bin/bash
+set -o pipefail
 
 ## add files
 cp -r /workspace/verl/verl ./
@@ -26,11 +27,20 @@ cp -r /workspace/MindSpeed/mindspeed ./
 cp -r /workspace/vllm/vllm ./
 cp -r /workspace/vllm-ascend/vllm_ascend ./
 
-## apply patch
-for PATCH_FILE in $(find ./patches -type f -name "*.patch"); do
-    PATCH_REL_PATH=$(realpath --relative-to=. "$PATCH_FILE")
+echo "Applying patches in numerical order..."
 
-    git apply -p3 --ignore-whitespace "$PATCH_FILE"
+find ./patches -type f -name "*.patch" | \
+sort -V | \
+
+## apply patch
+while IFS= read -r PATCH_FILE; do
+    # skip empty lines
+    [[ -z "$PATCH_FILE" ]] && continue
+    PATCH_REL_PATH=$(realpath --relative-to=. "$PATCH_FILE")
+    
+    echo -n "Applying $PATCH_REL_PATH ... "
+
+    git apply -p3 --ignore-whitespace "$PATCH_REL_PATH"
 
     if [ $? -ne 0 ]; then
         echo "[FAIL]: $PATCH_REL_PATH" >&2

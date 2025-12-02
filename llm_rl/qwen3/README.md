@@ -38,13 +38,15 @@
 |verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
 |verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 |verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
+|verl|[0011-verl-feature-enable-rollout-rebalance.patch](patches/verl/0011-verl-feature-enable-rollout-rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
-|vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|【手动卸载KV Cache】实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
-|vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|【手动卸载KV Cache】避免在KV Cache初始化时多次调用AttentionBackend初始化|
-|vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高|
+|vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
+|vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
+|vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
 |vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
 |vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
-|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
+|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/vllm_ascend/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
+|vllm_ascend|[0006-vllm_ascend-feature-chunk-moe-eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk-moe-eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
 
 
 ## 基于Dockerfile构建环境
@@ -135,15 +137,16 @@ torchrun --nproc_per_node 16 --nnodes ${NNODES} --node_rank ${NODE_RANK} convert
 # MASTER_ADDR：    ray集群主节点的IP地址，每个节点的脚本配置一致
 # SOCKET_IFNAME：  集群中各节点自己的网卡名，可通过ifconfig命令查看
 
-bash train_qwen3_235b_128die.sh
+bash ray_start_npu.sh TRAIN_SCRIPT
+# 示例： bash ray_start_npu.sh ./internal/train_grpo_qwen3_235b_128die_random_init.sh
 ```
 
-可对 `train_qwen3_235b_128die.sh` 104行进行修改，实现随机权重训练GRPO算法、真实权重训练GRPO算法、真实权重训练DAPO算法，对应修改如下：
-| 训练 | 104行修改|
-|------|----------|
-| 随机权重训练 GRPO算法 | `bash ./internal/train_grpo_qwen3_235b_128die_random_init.sh` |
-| 真实权重训练 GRPO算法 | `bash ./internal/train_grpo_qwen3_235b_128die_true_weight.sh` |
-| 真实权重训练 DAPO算法 | `bash ./internal/train_dapo_qwen3_235b_128die_true_weight.sh` |
+可在 `ray_start_npu.sh` 启动训练时添加参数，实现随机权重训练GRPO算法、真实权重训练GRPO算法、真实权重训练DAPO算法，对应修改如下：
+| 训练 | 训练启动脚本| 训练配置脚本|
+|------|----------|----------|
+| 随机权重训练 GRPO算法 | `ray_start_npu.sh` |`./internal/train_grpo_qwen3_235b_128die_random_init.sh` |
+| 真实权重训练 GRPO算法 | `ray_start_npu.sh` |`./internal/train_grpo_qwen3_235b_128die_true_weight.sh` |
+| 真实权重训练 DAPO算法 | `ray_start_npu.sh` |`./internal/train_dapo_qwen3_235b_128die_true_weight.sh` |
 
 ## 附录
 ### 手动准备环境

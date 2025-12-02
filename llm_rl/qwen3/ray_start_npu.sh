@@ -58,15 +58,6 @@ export VLLM_LOGGING_LEVEL=INFO
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode
 export VLLM_ASCEND_MODEL_EXECUTE_TIME_OBSERVE=0
 
-# Recipe
-export VLLM_ENABLE_GRAPH_MODE=1
-export D2D_DATA_TRANSFER=1
-export ALL_TO_ALL_RESHARD=1
-export USE_ALLTOALL_OVERLAP=1
-export VERL_LOGGING_LEVEL=DEBUG
-export VLLM_ENABLE_EPLB=0                   # 0: disable eplb, 1: enable eplb
-export USE_HDP=0                            # 0: disable hdp, 1: enable hdp
-
 export PYTHONUNBUFFERED=x
 
 ulimit -n 32768
@@ -88,6 +79,17 @@ export GLOO_SOCKET_IFNAME=$SOCKET_IFNAME
 #export HCCL_SOCKET_IFNAME=enp48s3u1u1
 #export GLOO_SOCKET_IFNAME=enp48s3u1u1
 
+DEFAULT_TRAIN_SCRIPT="./internal/train_grpo_qwen3_235b_128die_true_weight.sh"
+TRAIN_SCRIPT="${1:-${SCRIPT:-$DEFAULT_TRAIN_SCRIPT}}"
+
+echo "Preparing to launch training script: TRAIN_SCRIPT = $TRAIN_SCRIPT"
+
+if [[ ! -f "$TRAIN_SCRIPT" ]]; then
+    echo "ERROR: Training script not found: $TRAIN_SCRIPT"
+    echo "Please make sure the path is correct!"
+    exit 1
+fi
+
 
 if [ "$MASTER_ADDR" = "$CURRENT_IP" ]; then
   # the master node starts
@@ -103,7 +105,7 @@ if [ "$MASTER_ADDR" = "$CURRENT_IP" ]; then
       if [ "$device_count" -eq "$NNODES" ]; then
           echo "Ray cluster is ready with $device_count devices (from $npu_count NPU resources), starting Python script."
           ray status
-          bash ./internal/train_grpo_qwen3_235b_128die_true_weight.sh
+          bash $TRAIN_SCRIPT
           break
       else
           echo "Waiting for Ray to allocate $NNODES devices. Current device count: $device_count"
