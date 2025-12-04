@@ -40,19 +40,24 @@ Atlas A2/A3系列产品。
     -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
-    -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \  # 挂载业务目录
-    -w ${HOST_WORKSPACE} \  # 设为工作目录，进入后直接操作
-    --shm-size=100g \  # 大模型推荐100G+，可按需调整
-    --privileged=true \  # 确保设备访问权限
+    -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \
+    -w ${HOST_WORKSPACE} \
+    --shm-size=100g \
+    --privileged=true \
     -itd \
-    --net=host
-    --name ${YOUR_CONTAINER_NAME} \  # 容器名
+    --net=host \
+    --name ${YOUR_CONTAINER_NAME} \
     quay.io/ascend/vllm-ascend:v0.10.2rc1-a3 \
     /bin/bash
     
     # 进入容器
     docker exec -it ${YOUR_CONTAINER_NAME} bash
     ```
+
+    其中：
+    - `-v ${HOST_WORKSPACE}:${HOST_WORKSPACE}`为挂载业务目录
+    - `-w ${HOST_WORKSPACE}`为设置工作目录，进入后直接操作
+    - `--name ${YOUR_CONTAINER_NAME}`为配置容器名
     
 2. 安装CANN软件包。
 
@@ -118,13 +123,6 @@ Atlas A2/A3系列产品。
         --target_dir checkpoint/multiturn-sft-qwen-3-4b-instruct/global_step_186/huggingface
     ```
 
-5. 训练结果。
-
-    6个epoch训练后，aime_2025数据集验证指标如下：
-
-    - val-core/aime_2025/acc/mean@30: 0.29
-    - val-aux/num_turns/mean: 7.0
-
 ### RL训练
 
 1. 准备Sandbox环境。
@@ -153,6 +151,11 @@ Atlas A2/A3系列产品。
     ```
 
 4. 训练结果。
+
+    `val_before_train`（step 0），aime_2025数据集验证指标如下：
+
+    - val-core/aime_2025/acc/mean@30: 0.29
+    - val-aux/num_turns/mean: 7.0
 
     130个step训练后，aime_2025数据集验证指标如下：
 

@@ -18,7 +18,7 @@
 
    # 构建Docker容器
    docker run \
-   --name ${YOUR_CONTAINER_NAME} \  # 容器名
+   --name ${YOUR_CONTAINER_NAME} \
    --device=/dev/davinci0 \
    --device=/dev/davinci1 \
    --device=/dev/davinci2 \
@@ -36,10 +36,10 @@
    -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
    -v /etc/ascend_install.info:/etc/ascend_install.info \
    -v /root/.cache:/root/.cache \
-   -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \  # 挂载业务目录
-   -w ${HOST_WORKSPACE} \  # 设为工作目录，进入后直接操作
-   --shm-size=100g \  # 大模型推荐100G+，可按需调整
-   --privileged=true \  # 确保设备访问权限
+   -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \
+   -w ${HOST_WORKSPACE} \
+   --shm-size=100g \
+   --privileged=true \
    -itd \
    quay.io/ascend/vllm-ascend:v0.9.1 \
    /bin/bash
@@ -47,6 +47,11 @@
    # 进入容器
    docker exec -it ${YOUR_CONTAINER_NAME} bash
    ```
+
+   其中：
+   - `--name ${YOUR_CONTAINER_NAME}`为配置容器名
+   - `-v ${HOST_WORKSPACE}:${HOST_WORKSPACE}`为挂载业务目录
+   - `-w ${HOST_WORKSPACE}`为设置工作目录，进入后直接操作
 
 2. 安装 CANN 软件包。
 
