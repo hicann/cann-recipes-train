@@ -1,8 +1,9 @@
-# Qwen3-235B-A22B RL训练优化实践样例
+# Qwen3系列模型 RL训练优化实践样例
 
 ## 概述
-本样例针对Qwen3-235B-A22B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，使用veRL原生支持的MindSpeed和vLLM-Ascend框架，完成RL训练全流程的优化适配。
+本样例针对Qwen3-235B-A22B和Qwen3-32B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，使用veRL原生支持的MindSpeed和vLLM-Ascend框架，完成RL训练全流程的优化适配。
 
+### Qwen3-235B-A22B
 1. **GRPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，最优系统吞吐可达到120TPS/卡，性能测试结果如下：
 
    | 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
@@ -12,42 +13,24 @@
 
 2. **DAPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与34K，性能测试结果如下：
 
-   | 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length | max_response_length | 首步推理时间 | num_gen_batches |
-   |---------------------|----------|-----|-----------|--------- | ----------|------------|---------|---------|
-   | Qwen3-235B-A22B    | Atlas A3 64卡 | 128 | 16        | 1 |  2048             | 34816      | 6620s     | 2 |
+   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | 首步推理时间 | num_gen_batches |
+   | --------------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | ------------ | --------------- |
+   | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 16        | 1    | 2048              | 34816               | 6620s        | 2               |
+
+### Qwen3-32B
+**GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为1K与16K，性能测试结果如下：
+
+   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
+   | --------------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --------- |
+   | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 32        | 1    | 1024              | 16384               | 122.89    |
+
 
 ## 硬件要求
-产品型号：Atlas A3 系列
 
-最少卡数：64张A3
-
-## 文件说明
-|上级目录|文件路径|说明|
-|-------|--------|--------|
-|megatron|[0001-megatron-bugfix-state_ten-verification.patch](patches/megatron/0001-megatron-bugfix-state_ten-verification.patch)|在处理优化器状态时新增空值判断，避免因空值导致的运行异常|
-|megatron|[0002-megatron-feature-enable_hdp.patch](patches/megatron/0002-megatron-feature-enable_hdp.patch)|在ROPE中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
-|mindspeed|[0001-mindspeed-bugfix-builder.patch](patches/mindspeed/0001-mindspeed-bugfix-builder.patch)|兼容openeuler24.03版本下编译头文件缺失|
-|mindspeed|[0002-mindspeed-feature-enable_hdp.patch](patches/mindspeed/0002-mindspeed-feature-enable_hdp.patch)|在Ring Attention中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
-|verl|[0001-verl-feature-enable_alltoall_overlap.patch](patches/verl/0001-verl-feature-enable_alltoall_overlap.patch)|根据`USE_ALLTOALL_OVERLAP`环境变量调整权重加载逻辑|
-|verl|[0002-verl-feature-set_use_tqdm_true.patch](patches/verl/0002-verl-feature-set_use_tqdm_true.patch)|开启tqdm进度条，便于实时观测推理进度|
-|verl|[0003-verl-feature-recompute_old_log_prob.patch](patches/verl/0003-verl-feature-recompute_old_log_prob.patch)|对于GRPO on-policy算法，可以使用`log_prob.detach()`代替`old_log_prob`减少一次前向计算，添加控制参数配置和开启免计算时`ppo_epochs=1`校验|
-|verl|[0004-verl-feature-data_rebalance.patch](patches/verl/0004-verl-feature-data_rebalance.patch)|为缓解多卡推理时长尾负载不均，新增`data rebalance`，通过配置项控制启用；启用时执行固定重排序确保多卡之间推理prompt尽可能均衡|
-|verl|[0005-verl-feature-moe_alltoallv.patch](patches/verl/0005-verl-feature-moe_alltoallv.patch)|支持EP使用ALLToALLV做无通信冗余的reshard，通过专家参数定向路由方案优化内存使用和通信性能|
-|verl|[0006-verl-feature-weight_converter_alltoall_overlap.patch](patches/verl/0006-verl-feature-weight_converter_alltoall_overlap.patch)|完善Mcore到HF模型参数名转换逻辑|
-|verl|[0007-verl-feature-onload_offload.patch](patches/verl/0007-verl-feature-onload_offload.patch)|1.添加TorchAir图模式相关配置 2.由于NPU上vLLM的sleep模式可能存在内存卸载不干净的问题，改为手动实现NPU上Rollout模型及KV Cache的卸载和模型加载|
-|verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
-|verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
-|verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
-|verl|[0011-verl-feature-enable-rollout-rebalance.patch](patches/verl/0011-verl-feature-enable-rollout-rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
-|vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
-|vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
-|vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
-|vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
-|vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
-|vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
-|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/vllm_ascend/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
-|vllm_ascend|[0006-vllm_ascend-feature-chunk-moe-eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk-moe-eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
-
+| 基础模型        | 产品型号      | 最少卡数 |
+| --------------- | ------------- | -------- |
+| Qwen3-235B-A22B | Atlas A3 系列 | 64       |
+| Qwen3-32B       | Atlas A3 系列 | 16       |
 
 ## 基于Dockerfile构建环境
 > 环境搭建可以基于Dockerfile快速实现，我们已经在Dockerfile里配置了必要的昇腾软件和其他第三方软件的依赖。如果遇到网络不通等问题，也可以参考附录中的[手动准备环境](#手动准备环境)章节。
@@ -106,7 +89,9 @@ DAPO使用的dapo-math-17k数据集，验证集使用AIME，可参考[DAPO数据
 gsm8k等其他数据集准备方法可参考[verl官方文档](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html)。
 
 ## 模型权重准备
-本样例使用的Qwen3-235B-A22B模型权重准备方法如下：
+本样例使用的模型权重准备方法如下：
+
+### Qwen3-235B-A22B
 ```bash
 # 从魔塔社区下载模型的基础文件，存放至样例的./Qwen3-235B-A22B-hf目录下（不加载权重实验也需要执行这步操作）
 mkdir ./Qwen3-235B-A22B-hf
@@ -127,6 +112,14 @@ torchrun --nproc_per_node 16 --nnodes ${NNODES} --node_rank ${NODE_RANK} convert
 --hf_model_path ${hf_model} --output_path ${output_path} --trust_remote_code --use_cpu_initialization
 ```
 
+### Qwen3-32B
+```bash
+# 下载Qwen3-32B及完整权重至样例的./Qwen3-32B目录下（此步骤需要目录所在磁盘有65GB以上空间）。
+mkdir ./Qwen3-32B-hf
+pip install modelscope
+modelscope download --model Qwen/Qwen3-32B --local_dir ./Qwen3-32B
+```
+
 ## RL后训练执行
 
 在本样例代码根目录下启动Qwen3-235B-A22B的RL后训练。
@@ -142,13 +135,50 @@ bash ray_start_npu.sh TRAIN_SCRIPT
 ```
 
 可在 `ray_start_npu.sh` 启动训练时添加参数，实现随机权重训练GRPO算法、真实权重训练GRPO算法、真实权重训练DAPO算法，对应修改如下：
-| 训练 | 训练启动脚本| 训练配置脚本|
-|------|----------|----------|
-| 随机权重训练 GRPO算法 | `ray_start_npu.sh` |`./internal/train_grpo_qwen3_235b_128die_random_init.sh` |
-| 真实权重训练 GRPO算法 | `ray_start_npu.sh` |`./internal/train_grpo_qwen3_235b_128die_true_weight.sh` |
-| 真实权重训练 DAPO算法 | `ray_start_npu.sh` |`./internal/train_dapo_qwen3_235b_128die_true_weight.sh` |
+| 基础模型    | 训练                  | 训练启动脚本       | 训练配置脚本                                             |
+| ------------------ | --------------------- | ------------------ | -------------------------------------------------------- |
+| Qwen3-235B-A22B    | 随机权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_random_init.sh` |
+| Qwen3-235B-A22B    | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_true_weight.sh` |
+| Qwen3-235B-A22B    | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_235b_128die_true_weight.sh` |
+| Qwen3-32B          | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_32b_32die_true_weight.sh` |
+| Qwen3-32B          | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_32b_32die_true_weight.sh` |
 
 ## 附录
+### 文件说明
+|上级目录|文件路径|说明|
+|-------|--------|--------|
+|megatron|[0001-megatron-bugfix-state_ten-verification.patch](patches/megatron/0001-megatron-bugfix-state_ten-verification.patch)|在处理优化器状态时新增空值判断，避免因空值导致的运行异常|
+|megatron|[0002-megatron-feature-enable_hdp.patch](patches/megatron/0002-megatron-feature-enable_hdp.patch)|在ROPE中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
+|mindspeed|[0001-mindspeed-bugfix-builder.patch](patches/mindspeed/0001-mindspeed-bugfix-builder.patch)|兼容openeuler24.03版本下编译头文件缺失|
+|mindspeed|[0002-mindspeed-feature-enable_hdp.patch](patches/mindspeed/0002-mindspeed-feature-enable_hdp.patch)|在Ring Attention中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
+|verl|[0001-verl-feature-enable_alltoall_overlap.patch](patches/verl/0001-verl-feature-enable_alltoall_overlap.patch)|根据`USE_ALLTOALL_OVERLAP`环境变量调整权重加载逻辑|
+|verl|[0002-verl-feature-set_use_tqdm_true.patch](patches/verl/0002-verl-feature-set_use_tqdm_true.patch)|开启tqdm进度条，便于实时观测推理进度|
+|verl|[0003-verl-feature-recompute_old_log_prob.patch](patches/verl/0003-verl-feature-recompute_old_log_prob.patch)|对于GRPO on-policy算法，可以使用`log_prob.detach()`代替`old_log_prob`减少一次前向计算，添加控制参数配置和开启免计算时`ppo_epochs=1`校验|
+|verl|[0004-verl-feature-data_rebalance.patch](patches/verl/0004-verl-feature-data_rebalance.patch)|为缓解多卡推理时长尾负载不均，新增`data rebalance`，通过配置项控制启用；启用时执行固定重排序确保多卡之间推理prompt尽可能均衡|
+|verl|[0005-verl-feature-moe_alltoallv.patch](patches/verl/0005-verl-feature-moe_alltoallv.patch)|支持EP使用ALLToALLV做无通信冗余的reshard，通过专家参数定向路由方案优化内存使用和通信性能|
+|verl|[0006-verl-feature-weight_converter_alltoall_overlap.patch](patches/verl/0006-verl-feature-weight_converter_alltoall_overlap.patch)|完善Mcore到HF模型参数名转换逻辑|
+|verl|[0007-verl-feature-onload_offload.patch](patches/verl/0007-verl-feature-onload_offload.patch)|1.添加TorchAir图模式相关配置 2.由于NPU上vLLM的sleep模式可能存在内存卸载不干净的问题，改为手动实现NPU上Rollout模型及KV Cache的卸载和模型加载|
+|verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
+|verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
+|verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
+|verl|[0011-verl-feature-enable-rollout-rebalance.patch](patches/verl/0011-verl-feature-enable-rollout-rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
+|verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
+|vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
+|vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
+|vllm|[0003-vllm-feature-enabled_sam_spec_decode.patch](patches/vllm/0003-vllm-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
+|vllm|[vllm/v1/spec_decode/sam.py](patches/vllm/v1/spec_decode/sam.py)|SAM投机推理适配verl框架：实现SAM投机推理的核心能力
+|vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
+|vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
+|vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
+|vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
+|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/vllm_ascend/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
+|vllm_ascend|[0006-vllm_ascend-feature-chunk-moe-eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk-moe-eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
+|vllm_ascend|[0007-vllm_ascend-bugfix-disabled_fia.patch](patches/vllm_ascend/0007-vllm_ascend-bugfix-disabled-fia.patch)|取消vllm_ascend的特殊逻辑，投机推理的算子从FusedInferAttention算子回调为PagedAttention算子，避免性能劣化|
+|vllm_ascend|[0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](patches/vllm_ascend/0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch)|增加投机推理特性自动开关，解决投机推理特性在batch_size过高时性能劣化的问题|
+|vllm_ascend|[0009-vllm_ascend-feature-rewrote_rejection_sampler.patch](patches/vllm_ascend/0009-vllm_ascend-feature-rewrote-rejection-sampler.patch)|重写vllm_ascend的rejectionsampler实现，优化性能|
+|vllm_ascend|[0010-vllm_ascend-feature-enabled_sam_spec_decode.patch](patches/vllm_ascend/0010-vllm_ascend-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm_ascend框架：适配vllm框架的改动|
+|vllm_ascend|[spec_decode/sam_proposer.py](patches/vllm_ascend/spec_decode/sam_proposer.py)|SAM投机推理适配vllm_ascend框架：实现`SAMProposer`类，作为vllm调用SAM投机推理能力的接口|
+
 ### 手动准备环境
 
 1. 创建CANN 8.3.RC1镜像。
@@ -181,10 +211,7 @@ bash ray_start_npu.sh TRAIN_SCRIPT
     ```bash
     # 下载项目源码，以master分支为例
     git clone https://gitcode.com/cann/cann-recipes-train.git
-
-    # 安装依赖的python库
     cd cann-recipes-train/llm_rl/qwen3
-    pip install -r requirements.txt
     ```
 
 3. 下载依赖的开源框架代码。
@@ -204,9 +231,13 @@ bash ray_start_npu.sh TRAIN_SCRIPT
    git fetch origin pull/3427/head && \
    git cherry-pick -n -X theirs 448c6c3 && \
    git fetch origin pull/4030/head && \
-   git cherry-pick -n f2d57afe && \
-   git cherry-pick -n 566ca6ce
+   git cherry-pick -n 9e977e68 && \
+   git cherry-pick -n 5da6c6c3
    cp -r verl ../../
+   cp -r recipe/r1_ascend ../../
+   cp scripts/converter_hf_to_mcore.py ../../
+   cp recipe/dapo/config/* ../../verl/trainer/config/
+   cp recipe/dapo/*py ../../verl/trainer/
    cd -
 
    # 下载Megatron-LM源码
@@ -246,7 +277,7 @@ bash ray_start_npu.sh TRAIN_SCRIPT
    
    vLLM:
    ```bash
-   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e /workspace/vllm/ --extra-index https://download.pytorch.org/whl/cpu/ && \
+   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e ./asset/vllm/ --extra-index https://download.pytorch.org/whl/cpu/ && \
    python3 -m pip uninstall -y triton && \
    python3 -m pip cache purge
    ```
@@ -259,9 +290,15 @@ bash ray_start_npu.sh TRAIN_SCRIPT
    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/ascend-toolkit/latest/`uname -i`-linux/devlib && \
    export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:/usr/include/c++/12:/usr/include/c++/12/`uname -i`-openEuler-linux && \
    python3 -m pip install -v -e ./asset/vllm-ascend/ --exists-action=i --extra-index https://download.pytorch.org/whl/cpu/
+
    ```
 
-5. 对源码添加patch代码。
+5. 安装依赖的python库。
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+6. 对源码添加patch代码。
 
    为了使能patch修改，需要依次应用**patches**目录下的patch文件。
    ```bash
