@@ -53,7 +53,7 @@ tool_config_path=sandbox_fusion_tool_config.yaml
 
 # wandb
 project_name=retool
-experiment_name=qwen3-4b_dapo_$(data +%m%d_%H%M)
+experiment_name=qwen3-4b_dapo_$(date +%m%d_%H%M)
 default_local_dir=$DATA_ROOT/checkpoint/$experiment_name
 
 # ================= algorithm =================
