@@ -38,16 +38,6 @@ TRAIN_BATCH_SIZE=32
 GEN_BATCH_SIZE=$((TRAIN_BATCH_SIZE))
 MAX_TOKEN_LEN_PER_GPU=$(((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH) / TRAIN_CP))
 
-# Pre-compile MindSpeed Ops
-python -c "import mindspeed; from mindspeed.op_builder import RotaryPositionEmbeddingOpBuilder; RotaryPositionEmbeddingOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import RingAttentionUpdateOpBuilder; RingAttentionUpdateOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMOpBuilder; GMMOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMV2OpBuilder; GMMV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder.fused_adamw_v2_builder import FusedAdamWV2OpBuilder; FusedAdamWV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import MatmulAddOpBuilder; MatmulAddOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GroupMatmulAddOpBuilder; GroupMatmulAddOpBuilder().load()" &
-wait $(jobs -rp)
-
 python3 -m verl.trainer.main_ppo --config-path="${CONFIG_DIR}" \
     --config-name='ppo_megatron_trainer.yaml' \
     algorithm.adv_estimator=grpo \

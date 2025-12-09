@@ -13,13 +13,26 @@
 # limitations under the License.
 
 #!/bin/bash
-cp -r /workspace/verl/verl ./
-cp -r /workspace/verl/recipe/r1_ascend ./
-cp /workspace/verl/scripts/converter_hf_to_mcore.py ./
-cp /workspace/verl/recipe/dapo/config/* ./verl/trainer/config/
-cp /workspace/verl/recipe/dapo/*py ./verl/trainer/
-mkdir "megatron"
-cp -r /workspace/Megatron-LM/megatron/core ./megatron/core
-cp -r /workspace/MindSpeed/mindspeed ./
-cp -r /workspace/vllm/vllm ./
-cp -r /workspace/vllm-ascend/vllm_ascend ./
+set -o pipefail
+
+echo "Applying patches in numerical order..."
+
+find ./patches -type f -name "*.patch" | \
+sort -V | \
+
+## apply patch
+while IFS= read -r PATCH_FILE; do
+    # skip empty lines
+    [[ -z "$PATCH_FILE" ]] && continue
+    PATCH_REL_PATH=$(realpath --relative-to=. "$PATCH_FILE")
+    
+    echo -n "Applying $PATCH_REL_PATH ... "
+
+    git apply --ignore-whitespace "$PATCH_REL_PATH"
+
+    if [ $? -ne 0 ]; then
+        echo "[FAIL]: $PATCH_REL_PATH" >&2
+        exit 1
+    fi
+    echo "[SUCCESS]: $PATCH_REL_PATH"
+done

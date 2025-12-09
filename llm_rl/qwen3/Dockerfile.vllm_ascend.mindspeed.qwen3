@@ -1,4 +1,4 @@
-# Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
+# Copyright (c) 2025 Huawei Technologies Co., Ltd. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ ARG COMPILE_CUSTOM_KERNELS=1
 ENV DEBIAN_FRONTED=noninteractive
 ENV COMPILE_CUSTOM_KERNELS=${COMPILE_CUSTOM_KERNELS}
 
+RUN yum install -y net-tools
+
 WORKDIR /workspace
 
 RUN pip config set global.index-url ${PIP_INDEX_URL}
@@ -33,10 +35,7 @@ RUN git clone https://github.com/volcengine/verl.git && \
     cd verl && \
     git checkout v0.6.0 && \
     git fetch origin pull/3427/head && \
-    git cherry-pick -n -X theirs 448c6c3 && \
-    git fetch origin pull/4030/head && \
-    git cherry-pick -n 9e977e68 && \
-    git cherry-pick -n 5da6c6c3
+    git cherry-pick -n -X theirs 448c6c3
 
 # Megatron-LM
 RUN git clone https://github.com/NVIDIA/Megatron-LM.git && \

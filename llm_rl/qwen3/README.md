@@ -32,6 +32,7 @@
 | Qwen3-235B-A22B | Atlas A3 系列 | 64       |
 | Qwen3-32B       | Atlas A3 系列 | 16       |
 
+
 ## 基于Dockerfile构建环境
 > 环境搭建可以基于Dockerfile快速实现，我们已经在Dockerfile里配置了必要的昇腾软件和其他第三方软件的依赖。如果遇到网络不通等问题，也可以参考附录中的[手动准备环境](#手动准备环境)章节。
 
@@ -69,16 +70,24 @@
    bash run_container.sh your_docker_name your_image_name:version
    ```
 
-2. 安装所需的python依赖：
+2. 源码准备及安装所需的python依赖。
    ```bash
+   # 下载本样例所在代码仓，以master分支为例
+   git clone https://gitcode.com/cann/cann-recipes-train.git
+
+   cd ./cann-recipes-train/llm_rl/qwen3/
+
+   # 添加镜像中已经准备好的依赖文件
+   bash build_project.sh
+
    # 安装依赖的python库
    pip install -r requirements.txt
    ```
 
-3. 源码准备并使能patch修改：
-   可通过 **build_project.sh** 一键执行，在当前目录下（cann-recipes-train/llm_rl/qwen3）运行：
+3. 使能patch修改：
+   可通过 **apply_all_patches.sh** 一键执行，在当前目录下（cann-recipes-train/llm_rl/qwen3）运行：
    ```bash
-   bash build_project.sh
+   bash apply_all_patches.sh
    ```
 
 ## 数据集准备
@@ -129,21 +138,24 @@ modelscope download --model Qwen/Qwen3-32B --local_dir ./Qwen3-32B
 # source脚本路径：  根据实际CANN安装目录调整
 # MASTER_ADDR：    ray集群主节点的IP地址，每个节点的脚本配置一致
 # SOCKET_IFNAME：  集群中各节点自己的网卡名，可通过ifconfig命令查看
+# VLLM_DP_SIZE:    推理阶段DP配置，按推理模型切分和总卡数计算
 
-bash ray_start_npu.sh TRAIN_SCRIPT
-# 示例： bash ray_start_npu.sh ./internal/train_grpo_qwen3_235b_128die_random_init.sh
+bash ray_start_npu.sh TRAIN_SCRIPT ENV_SCRIPT
+# 示例： bash ray_start_npu.sh ./internal/train_grpo_qwen3_235b_128die_random_init.sh ./internal/qwen3_235b_env.sh
+# 如果不需要额外的环境变量配置，则不需要该参数，示例：bash ray_start_npu.sh ./internal/train_grpo_qwen3_32b_32die_true_weight.sh
 ```
 
 可在 `ray_start_npu.sh` 启动训练时添加参数，实现随机权重训练GRPO算法、真实权重训练GRPO算法、真实权重训练DAPO算法，对应修改如下：
-| 基础模型    | 训练                  | 训练启动脚本       | 训练配置脚本                                             |
-| ------------------ | --------------------- | ------------------ | -------------------------------------------------------- |
-| Qwen3-235B-A22B    | 随机权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_random_init.sh` |
-| Qwen3-235B-A22B    | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_true_weight.sh` |
-| Qwen3-235B-A22B    | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_235b_128die_true_weight.sh` |
-| Qwen3-32B          | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_32b_32die_true_weight.sh` |
-| Qwen3-32B          | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_32b_32die_true_weight.sh` |
+| 基础模型    | 训练 | 训练启动脚本| 训练配置脚本| 环境变量配置脚本 |
+|------|----------|----------|----------|----------|
+| Qwen3-235B-A22B    | 随机权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_random_init.sh` | `./internal/qwen3_235b_env.sh` |
+| Qwen3-235B-A22B    | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_235b_128die_true_weight.sh` | `./internal/qwen3_235b_env.sh` |
+| Qwen3-235B-A22B    | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_235b_128die_true_weight.sh` | `./internal/qwen3_235b_env.sh` |
+| Qwen3-32B          | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_32b_32die_true_weight.sh` | - |
+| Qwen3-32B          | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_32b_32die_true_weight.sh` | - |
 
 ## 附录
+
 ### 文件说明
 |上级目录|文件路径|说明|
 |-------|--------|--------|
@@ -163,10 +175,12 @@ bash ray_start_npu.sh TRAIN_SCRIPT
 |verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
 |verl|[0011-verl-feature-enable-rollout-rebalance.patch](patches/verl/0011-verl-feature-enable-rollout-rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
 |verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
+|verl|[0013-verl-bugfix-dataProto_concat.patch](patches/verl/0013-verl-bugfix-dataProto_concat.patch)|合并DataProto数据时，避免因不同节点的`data['timing']['generate_sequences']`存在细微差异导致报错|
+|verl|[0014-verl-feature-dapo_data_rebalance.patch](patches/verl/0014-verl-feature-dapo_data_rebalance.patch)|`data_rebalance` DAPO算法适配|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
 |vllm|[0003-vllm-feature-enabled_sam_spec_decode.patch](patches/vllm/0003-vllm-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
-|vllm|[vllm/v1/spec_decode/sam.py](patches/vllm/v1/spec_decode/sam.py)|SAM投机推理适配verl框架：实现SAM投机推理的核心能力
+|vllm|[vllm/v1/spec_decode/sam.py](patches/vllm/v1/spec_decode/sam.py)|SAM投机推理适配verl框架：实现SAM投机推理的核心能力|
 |vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
 |vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
 |vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
@@ -178,6 +192,7 @@ bash ray_start_npu.sh TRAIN_SCRIPT
 |vllm_ascend|[0009-vllm_ascend-feature-rewrote_rejection_sampler.patch](patches/vllm_ascend/0009-vllm_ascend-feature-rewrote-rejection-sampler.patch)|重写vllm_ascend的rejectionsampler实现，优化性能|
 |vllm_ascend|[0010-vllm_ascend-feature-enabled_sam_spec_decode.patch](patches/vllm_ascend/0010-vllm_ascend-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm_ascend框架：适配vllm框架的改动|
 |vllm_ascend|[spec_decode/sam_proposer.py](patches/vllm_ascend/spec_decode/sam_proposer.py)|SAM投机推理适配vllm_ascend框架：实现`SAMProposer`类，作为vllm调用SAM投机推理能力的接口|
+|patches|[0001-feature-model-converter.patch](patches/0001-feature-model-converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑|
 
 ### 手动准备环境
 
@@ -205,16 +220,13 @@ bash ray_start_npu.sh TRAIN_SCRIPT
 
    # 执行docker exec命令进入容器
    docker exec -it -u root your_docker_name bash
+
+   # 安装依赖软件
+   yum install -y net-tools # openEuler系统
+   apt install -y net-tools # Ubuntu系统
    ```
 
-2. 下载项目源码并安装依赖的python库。
-    ```bash
-    # 下载项目源码，以master分支为例
-    git clone https://gitcode.com/cann/cann-recipes-train.git
-    cd cann-recipes-train/llm_rl/qwen3
-    ```
-
-3. 下载依赖的开源框架代码。
+2. 下载依赖的开源框架代码。
 
    为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他框架代码需要拉取。
 
@@ -222,62 +234,48 @@ bash ray_start_npu.sh TRAIN_SCRIPT
    ```bash
    set -ex
 
-   mkdir -p asset && cd asset
+   mkdir -p /workspace && cd /workspace
 
    # 下载verl源码
    git clone https://github.com/volcengine/verl.git
    cd verl
    git checkout v0.6.0
-   git fetch origin pull/3427/head && \
-   git cherry-pick -n -X theirs 448c6c3 && \
-   git fetch origin pull/4030/head && \
-   git cherry-pick -n 9e977e68 && \
-   git cherry-pick -n 5da6c6c3
-   cp -r verl ../../
-   cp -r recipe/r1_ascend ../../
-   cp scripts/converter_hf_to_mcore.py ../../
-   cp recipe/dapo/config/* ../../verl/trainer/config/
-   cp recipe/dapo/*py ../../verl/trainer/
+   git fetch origin pull/3427/head
+   git cherry-pick -n -X theirs 448c6c3
    cd -
 
    # 下载Megatron-LM源码
    git clone https://github.com/NVIDIA/Megatron-LM.git
    cd Megatron-LM
    git checkout core_v0.12.1
-   mkdir -p ../../megatron
-   cp -r megatron/core/ ../../megatron
    cd -
 
    # 下载MindSpeed源码
    git clone https://gitcode.com/Ascend/MindSpeed.git
    cd MindSpeed
    git checkout f6688c61bcfe45243ee5eb34c6f013b1e06eca81
-   cp -r mindspeed ../../
    cd -
 
    # 下载vLLM源码
    git clone https://github.com/vllm-project/vllm.git
    cd vllm
    git checkout v0.11.0
-   cp -r vllm ../../
    cd -
 
    # 下载vLLM-Ascend源码
    git clone https://github.com/vllm-project/vllm-ascend.git
    cd vllm-ascend
    git checkout v0.11.0rc0
-   cp -r vllm_ascend ../../
    cd -
 
-   # 回到项目目录
    cd ../
    ```
 
-4. 源码编译安装vLLM和vLLM-Ascend。
+3. 源码编译安装vLLM和vLLM-Ascend。
    
    vLLM:
    ```bash
-   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e ./asset/vllm/ --extra-index https://download.pytorch.org/whl/cpu/ && \
+   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e /workspace/vllm/ --extra-index https://download.pytorch.org/whl/cpu/ && \
    python3 -m pip uninstall -y triton && \
    python3 -m pip cache purge
    ```
@@ -289,18 +287,9 @@ bash ray_start_npu.sh TRAIN_SCRIPT
    source /usr/local/Ascend/nnal/atb/set_env.sh && \
    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/Ascend/ascend-toolkit/latest/`uname -i`-linux/devlib && \
    export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:/usr/include/c++/12:/usr/include/c++/12/`uname -i`-openEuler-linux && \
-   python3 -m pip install -v -e ./asset/vllm-ascend/ --exists-action=i --extra-index https://download.pytorch.org/whl/cpu/
+   python3 -m pip install -v -e /workspace/vllm-ascend/ --exists-action=i --extra-index https://download.pytorch.org/whl/cpu/
 
    ```
+   
 
-5. 安装依赖的python库。
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-6. 对源码添加patch代码。
-
-   为了使能patch修改，需要依次应用**patches**目录下的patch文件。
-   ```bash
-   git apply -p3 --ignore-whitespace patches/xxx.patch
-   ```
+后续步骤可参考[基于Dockerfile构建环境](#基于dockerfile构建环境) `2. 源码准备及安装所需的python依赖` 和 `3. 使能patch修改`。

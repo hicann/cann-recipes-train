@@ -55,15 +55,6 @@ rollout_is_veto_threshold=null  # No veto
 
 loss_agg_mode="token-mean"
 
-# Pre-compile MindSpeed Ops
-python -c "import mindspeed; from mindspeed.op_builder import RotaryPositionEmbeddingOpBuilder; RotaryPositionEmbeddingOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import RingAttentionUpdateOpBuilder; RingAttentionUpdateOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMOpBuilder; GMMOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMV2OpBuilder; GMMV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder.fused_adamw_v2_builder import FusedAdamWV2OpBuilder; FusedAdamWV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import MatmulAddOpBuilder; MatmulAddOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GroupMatmulAddOpBuilder; GroupMatmulAddOpBuilder().load()" &
-wait $(jobs -rp)
 
 python3 -m verl.trainer.main_dapo --config-path="${CONFIG_DIR}" \
     --config-name='dapo_megatron_trainer.yaml' \

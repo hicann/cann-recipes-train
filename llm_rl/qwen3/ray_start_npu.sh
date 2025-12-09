@@ -22,6 +22,7 @@ export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
 export TASK_QUEUE_ENABLE=2
 
 # CANN
+# The default CANN installation path. If your installation directory differs, please adjust the paths accordingly. 
 export ASCEND_TOOLKIT_HOME=/usr/local/Ascend/ascend-toolkit/latest
 ASCEND_PROCESS_LOG_PATH__BACKUP=$ASCEND_PROCESS_LOG_PATH
 
@@ -40,7 +41,7 @@ export ASCEND_HOST_LOG_FILE_NUM=1000
 
 # hydra and ray
 export HYDRA_FULL_ERROR=1                   # display the accurate error stack
-export RAY_DEDUP_LOGS=0                    # 0: disable ray's log folding 1: enable ray's log folding
+export RAY_DEDUP_LOGS=0                     # 0: disable ray's log folding 1: enable ray's log folding
 
 # HCCL
 export HCCL_CONNECT_TIMEOUT=900
@@ -53,6 +54,7 @@ export HCCL_HOST_SOCKET_PORT_RANGE="auto"
 # vLLM
 export VLLM_USE_V1=1
 export VLLM_LOGGING_LEVEL=INFO
+export VLLM_DP_SIZE=32                      # [TODO] configure the DP size of vLLM based on actual training configration
 
 # vLLM-Ascend
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode
@@ -63,10 +65,10 @@ export PYTHONUNBUFFERED=x
 ulimit -n 32768
 mkdir logs
 
-NNODES=8                          # number of nodes
+NNODES=8                           # [TODO] number of nodes
 NPUS_PER_NODE=16                   # the number of npus for each node
-MASTER_ADDR="IP FOR MASTER NODE"   # modify it to correspond to the IP of the master node
-SOCKET_IFNAME="SOCKET IFNAME FOR CURRENT NODE"  # modify it to the communication network card of the current node
+MASTER_ADDR="IP FOR MASTER NODE"   # [TODO] modify it to correspond to the IP of the master node
+SOCKET_IFNAME="SOCKET IFNAME FOR CURRENT NODE"  # [TODO] use `ifconfig` to check and modify it to the communication network card of the current node.
 # obtain the current node IP
 CURRENT_IP=$(ifconfig $SOCKET_IFNAME | grep -Eo 'inet (addr:)?([0-9]{1,3}\.){3}[0-9]{1,3}' | awk '{print $NF}')
 
@@ -76,11 +78,14 @@ export TP_SOCKET_IFNAME=$SOCKET_IFNAME
 export HCCL_SOCKET_IFNAME=$SOCKET_IFNAME
 export GLOO_SOCKET_IFNAME=$SOCKET_IFNAME
 
-#export HCCL_SOCKET_IFNAME=enp48s3u1u1
-#export GLOO_SOCKET_IFNAME=enp48s3u1u1
-
 DEFAULT_TRAIN_SCRIPT="./internal/train_grpo_qwen3_235b_128die_true_weight.sh"
 TRAIN_SCRIPT="${1:-${SCRIPT:-$DEFAULT_TRAIN_SCRIPT}}"
+
+ENV_SCRIPT="${2:-$SCRIPT}"
+
+if [ -n "$2" ]; then
+    source "$ENV_SCRIPT"
+fi
 
 echo "Preparing to launch training script: TRAIN_SCRIPT = $TRAIN_SCRIPT"
 
@@ -89,6 +94,16 @@ if [[ ! -f "$TRAIN_SCRIPT" ]]; then
     echo "Please make sure the path is correct!"
     exit 1
 fi
+
+# Pre-compile MindSpeed Ops
+python -c "import mindspeed; from mindspeed.op_builder import RotaryPositionEmbeddingOpBuilder; RotaryPositionEmbeddingOpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder import RingAttentionUpdateOpBuilder; RingAttentionUpdateOpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder import GMMOpBuilder; GMMOpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder import GMMV2OpBuilder; GMMV2OpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder.fused_adamw_v2_builder import FusedAdamWV2OpBuilder; FusedAdamWV2OpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder import MatmulAddOpBuilder; MatmulAddOpBuilder().load()" &
+python -c "import mindspeed; from mindspeed.op_builder import GroupMatmulAddOpBuilder; GroupMatmulAddOpBuilder().load()" &
+wait $(jobs -rp)
 
 
 if [ "$MASTER_ADDR" = "$CURRENT_IP" ]; then

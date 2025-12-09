@@ -13,15 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Recipe features
-export VLLM_ENABLE_GRAPH_MODE=1
-export VLLM_CHUNK_MOE_SIZE=512
-export ALL_TO_ALL_RESHARD=1                 # Enable EP to reshard parameters with AllToAllV (without communication redundancy).
-export USE_ALLTOALL_OVERLAP=1               # Enable to overlap communication in EP with computation to hide MoE communication latency. Should be consistent with model conversion config.
-export VLLM_ENABLE_EPLB=0                   # 0: disable eplb, 1: enable eplb
-export USE_HDP=0                            # 0: disable hdp, 1: enable hdp
-export ROLLOUT_REBALANCE_ENABLE=0           # 0: disable rollout rebalance, 1: enable rollout rebalance
-
 # Model and dataset
 HOME=$(pwd)
 CONFIG_DIR=${CONFIG_DIR:-"${HOME}/verl/trainer/config"}
@@ -38,7 +29,6 @@ MAX_NUM_SEQS=256
 
 INFER_TP=4
 INFER_DP=$((NODES * 16 / INFER_TP))
-export VLLM_DP_SIZE=${INFER_DP}
 
 TRAIN_TP=4
 TRAIN_PP=4
@@ -47,16 +37,6 @@ TRAIN_EP=$((NODES * 16 / TRAIN_PP))
 
 TRAIN_BATCH_SIZE=512
 MAX_TOKEN_LEN_PER_GPU=$(((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH) / TRAIN_CP))
-
-# Pre-compile MindSpeed Ops
-python -c "import mindspeed; from mindspeed.op_builder import RotaryPositionEmbeddingOpBuilder; RotaryPositionEmbeddingOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import RingAttentionUpdateOpBuilder; RingAttentionUpdateOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMOpBuilder; GMMOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GMMV2OpBuilder; GMMV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder.fused_adamw_v2_builder import FusedAdamWV2OpBuilder; FusedAdamWV2OpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import MatmulAddOpBuilder; MatmulAddOpBuilder().load()" &
-python -c "import mindspeed; from mindspeed.op_builder import GroupMatmulAddOpBuilder; GroupMatmulAddOpBuilder().load()" &
-wait $(jobs -rp)
 
 python3 -m verl.trainer.main_ppo --config-path="${CONFIG_DIR}" \
     --config-name='ppo_megatron_trainer.yaml'\
