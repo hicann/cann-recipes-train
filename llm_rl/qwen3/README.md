@@ -1,7 +1,7 @@
 # Qwen3系列模型 RL训练优化实践样例
 
 ## 概述
-本样例针对Qwen3-235B-A22B和Qwen3-32B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，使用veRL原生支持的MindSpeed和vLLM-Ascend框架，完成RL训练全流程的优化适配。
+本样例针对Qwen3-235B-A22B和Qwen3-32B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，使用veRL原生支持的MindSpeed和vLLM-Ascend框架，完成RL训练全流程的优化适配。优化点介绍可参见[Qwen3-235B 32K长序列RL训练优化实践](../../docs/llm_rl/qwen3_235B_32k_longseq_rl_train_optimization.md)。
 
 ### Qwen3-235B-A22B
 1. **GRPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，最优系统吞吐可达到120TPS/卡，性能测试结果如下：
@@ -230,7 +230,7 @@ bash ray_start_npu.sh TRAIN_SCRIPT ENV_SCRIPT
 
    为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他框架代码需要拉取。
 
-   在当前目录（cann-recipes-train/llm_rl/qwen3）执行如下命令，需注意，请确保环境能够正常连通网络。
+   执行如下命令拉取本项目所依赖的框架代码，需注意，请确保环境能够正常连通网络。
    ```bash
    set -ex
 
