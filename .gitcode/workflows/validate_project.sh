@@ -46,20 +46,63 @@ PATCH_STATUS=$?
 
 echo "$PATCH_LOG"
 
+# Check exit code first
 if [ $PATCH_STATUS -ne 0 ]; then
     echo -e "${RED}[ERROR] apply_all_patches.sh failed.${RESET}"
+    echo ""
+
+    echo -e "${YELLOW}Failed patch details (from exit code):${RESET}"
+
+    # Try to extract failed patch lines from the log
+    echo "$PATCH_LOG" | grep -i "\[FAIL\]" | while IFS= read -r line; do
+        PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+        echo "  $PATCH_NAME"
+    done
+
+    echo ""
     exit 1
 fi
 
-if echo "$PATCH_LOG" | grep -qi "\[FAIL\]"; then
+# Detect failures in log output even if exit code is 0.
+FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
+
+if [ -n "$FAILED_PATCHES" ]; then
     echo -e "${RED}[ERROR] A patch failed to apply.${RESET}"
+    echo ""
+
+    echo -e "${YELLOW}Failed patch details:${RESET}"
+
+    echo "$FAILED_PATCHES" | while IFS= read -r line; do
+        # Try to extract the actual patch filename
+        # Supports formats like:
+        #   "Skipping patch patches/vllm/0003-example.patch"
+        #   "patches/vllm/0003-example.patch: skipped"
+        PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+        echo "  $PATCH_NAME"
+    done
+
+    echo ""
     exit 1
 fi
 
-if echo "$PATCH_LOG" | grep -qi "skipped"; then
-    echo -e "${RED}[ERROR] A patch was skipped. CI requires full apply.${RESET}"
+# Detect skipped patches
+SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -i "skipped" || true)
+
+if [ -n "$SKIPPED_PATCHES" ]; then
+    echo -e "${RED}[ERROR] One or more patches were skipped. Full application is required.${RESET}"
+    echo ""
+
+    echo -e "${YELLOW}Skipped patch details:${RESET}"
+    echo "$SKIPPED_PATCHES" | while IFS= read -r line; do
+        PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+
+        echo "  $PATCH_NAME"
+    done
+
+    echo ""
     exit 1
 fi
+
 
 echo -e "${GREEN}[OK] All patches applied successfully.${RESET}"
 echo -e "${GREEN}=== Project CI completed successfully ===${RESET}"
