@@ -51,7 +51,7 @@ for PROJECT in "${PROJECT_ROOT}"/*; do
     pushd "${PROJECT}" >/dev/null
 
     # Run shared pipeline script that lives in workflow directory
-    bash "${WORKFLOW_DIR}/ci_pipeline.sh"
+    bash "${WORKFLOW_DIR}/validate_project.sh"
     if [ $? -ne 0 ]; then
         echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_NAME}${RESET}"
         popd >/dev/null
