@@ -11,7 +11,7 @@ RESET="\033[0m"
 
 # Resolve root directory
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-WORKFLOW_DIR="${ROOT_DIR}/.gitcode/workflow"
+WORKFLOW_DIR="${ROOT_DIR}/.gitcode/workflows"
 PROJECT_ROOT="${ROOT_DIR}/llm_rl"
 
 # Whitelisted projects to skip
