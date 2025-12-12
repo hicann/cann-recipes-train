@@ -6,13 +6,13 @@ Subject: [PATCH] Fix DataProto concat bug
 DataProto concat bug when timing generate_sequences is sightly different
 https://github.com/volcengine/verl/pull/4030
 ---
- rl_train/qwen3/verl/protocol.py | 25 ++++++++++++++++++++++++-
+ llm_rl/qwen3/verl/protocol.py | 25 ++++++++++++++++++++++++-
  1 file changed, 24 insertions(+), 1 deletion(-)
 
-diff --git a/rl_train/qwen3/verl/protocol.py b/rl_train/qwen3/verl/protocol.py
+diff --git a/llm_rl/qwen3/verl/protocol.py b/llm_rl/qwen3/verl/protocol.py
 index e0b1aff..fda1e7c 100644
---- a/rl_train/qwen3/verl/protocol.py
-+++ b/rl_train/qwen3/verl/protocol.py
+--- a/llm_rl/qwen3/verl/protocol.py
++++ b/llm_rl/qwen3/verl/protocol.py
 @@ -940,6 +940,24 @@ class DataProto:
          for key, val in non_tensor_batch.items():
              non_tensor_batch[key] = np.concatenate(val, axis=0)
