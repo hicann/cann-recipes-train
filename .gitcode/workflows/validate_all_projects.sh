@@ -39,7 +39,7 @@ for PROJECT in "${PROJECT_ROOT}"/*; do
     echo -e "${CYAN}--- Running CI for project: ${PROJECT_NAME} ---${RESET}"
 
     # Check that the required project scripts exist
-    for f in download_deps.sh build_project.sh apply_all_patches.sh check_patch_names.py; do
+    for f in download_deps.sh build_project.sh apply_all_patches.sh check_patch_names.sh; do
         if [ ! -f "${PROJECT}/${f}" ]; then
             echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_NAME}${RESET}"
             exit 1

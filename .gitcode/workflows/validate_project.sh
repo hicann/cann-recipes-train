@@ -11,7 +11,7 @@ RESET="\033[0m"
 
 echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
 
-python3 check_patch_names.py
+bash check_patch_names.sh
 if [ $? -ne 0 ]; then
     echo -e "${RED}[ERROR] Patch naming validation failed.${RESET}"
     exit 1
