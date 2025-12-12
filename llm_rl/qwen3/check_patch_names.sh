@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 set -e
 set -o pipefail
 
@@ -6,16 +6,17 @@ ROOT="patches"
 ERRORS=()
 
 # -----------------------------------------
-# Validate root-level patches (special rule)
+# Validate root-level patches
 #   NNNN-(bugfix|feature)-description.patch
+#   description must use underscores, not dashes
 # -----------------------------------------
 check_root_patches() {
     local files=("$@")
     local nums=()
 
     for f in "${files[@]}"; do
-        if [[ ! "$f" =~ ^([0-9]{4})\-(bugfix|feature)\-.+\.patch$ ]]; then
-            ERRORS+=("[Root naming error] $ROOT/$f must follow: NNNN-(bugfix|feature)-description.patch")
+        if [[ ! "$f" =~ ^([0-9]{4})\-(bugfix|feature)\-[A-Za-z0-9_]+\.patch$ ]]; then
+            ERRORS+=("[Root naming error] $ROOT/$f must follow: NNNN-(bugfix|feature)-description.patch (description must use underscores)")
             continue
         fi
 
@@ -28,7 +29,7 @@ check_root_patches() {
     for ((i=1; i<${#sorted[@]}; i++)); do
         prev="${sorted[$((i-1))]%%:*}"
         curr="${sorted[$i]%%:*}"
-        if (( curr <= prev )); then
+        if (( 10#$curr <= 10#$prev )); then
             ERRORS+=("[Sequence error] ${sorted[$i]#*:} has a non-increasing sequence number")
         fi
     done
@@ -37,6 +38,7 @@ check_root_patches() {
 # -----------------------------------------
 # Validate subdirectory patches
 #   NNNN-module-(bugfix|feature)-description.patch
+#   description must use underscores, not dashes
 # -----------------------------------------
 check_subdir_patches() {
     local subdir="$1"
@@ -47,8 +49,9 @@ check_subdir_patches() {
 
     for f in "${files[@]}"; do
         local full="$subdir/$f"
-        if [[ ! "$f" =~ ^([0-9]{4})\-[A-Za-z0-9_]+\-(bugfix|feature)\-.+\.patch$ ]]; then
-            ERRORS+=("[Naming error] $full must follow: NNNN-module-(bugfix|feature)-description.patch")
+
+        if [[ ! "$f" =~ ^([0-9]{4})\-[A-Za-z0-9_]+\-(bugfix|feature)\-[A-Za-z0-9_]+\.patch$ ]]; then
+            ERRORS+=("[Naming error] $full must follow: NNNN-module-(bugfix|feature)-description.patch (description must use underscores)")
             continue
         fi
 
