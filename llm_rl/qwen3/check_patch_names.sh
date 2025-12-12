@@ -61,7 +61,7 @@ check_subdir_patches() {
     for ((i=1; i<${#sorted[@]}; i++)); do
         prev="${sorted[$((i-1))]%%:*}"
         curr="${sorted[$i]%%:*}"
-        if (( curr <= prev )); then
+        if (( 10#$curr <= 10#$prev )); then
             ERRORS+=("[Sequence error] ${sorted[$i]#*:} has a non-increasing sequence number")
         fi
     done
