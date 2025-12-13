@@ -1,9 +1,14 @@
 # Qwen3系列模型 RL训练优化实践样例
 
 ## 概述
-本样例针对Qwen3-235B-A22B和Qwen3-32B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，使用veRL原生支持的MindSpeed和vLLM-Ascend框架，完成RL训练全流程的优化适配。优化点介绍可参见[Qwen3-235B 32K长序列RL训练优化实践](../../docs/llm_rl/qwen3_235B_32k_longseq_rl_train_optimization.md)。
+本样例针对Qwen3-235B-A22B和Qwen3-32B模型，基于[veRL开源框架](https://github.com/volcengine/verl)，以及veRL原生支持的MindSpeed和vLLM-Ascend框架，完成了多项强化学习实践。
+
+针对Qwen3-235B-A22B RL训练全流程的优化适配，参见[Qwen3-235B 32K长序列RL训练优化实践](../../docs/llm_rl/qwen3_235B_32k_longseq_rl_train_optimization.md)。
+
+针对Qwen3-235B-A22B和Qwen3-32B上的SAM投机推理实践，参见[SAM投机推理：长序列强化学习训练加速利器](../../docs/llm_rl/sam_decoding.md)。
 
 ### Qwen3-235B-A22B
+
 1. **GRPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，最优系统吞吐可达到120TPS/卡，性能测试结果如下：
 
    | 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
@@ -18,11 +23,19 @@
    | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 16        | 1    | 2048              | 34816               | 6620s        | 2               |
 
 ### Qwen3-32B
-**GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为1K与16K，性能测试结果如下：
+1. **GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
 
-   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
-   | --------------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --------- |
-   | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 32        | 1    | 1024              | 16384               | 122.89    |
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | SAM投机推理    | 首步推理时间 | 提升 |
+   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 1950       | 13%     |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2261       |      |
+
+2. **DAPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
+
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | SAM投机推理    | 首步推理时间 | 提升 |
+   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 2139       | 9%     |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2367       |      |
 
 
 ## 硬件要求
@@ -124,14 +137,14 @@ torchrun --nproc_per_node 16 --nnodes ${NNODES} --node_rank ${NODE_RANK} convert
 ### Qwen3-32B
 ```bash
 # 下载Qwen3-32B及完整权重至样例的./Qwen3-32B目录下（此步骤需要目录所在磁盘有65GB以上空间）。
-mkdir ./Qwen3-32B-hf
+mkdir ./Qwen3-32B
 pip install modelscope
 modelscope download --model Qwen/Qwen3-32B --local_dir ./Qwen3-32B
 ```
 
 ## RL后训练执行
 
-在本样例代码根目录下启动Qwen3-235B-A22B的RL后训练。
+在本样例代码根目录下，按照如下方式启动RL后训练样例。
 
 ```bash
 # 请注意，以下bash启动脚本中的内容需要手动配置
