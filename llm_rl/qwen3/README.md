@@ -158,6 +158,15 @@ bash ray_start_npu.sh TRAIN_SCRIPT ENV_SCRIPT
 # 如果不需要额外的环境变量配置，则不需要该参数，示例：bash ray_start_npu.sh ./internal/train_grpo_qwen3_32b_32die_true_weight.sh
 ```
 
+注：如果更换环境CANN包版本，建议在运行前手动清除以下缓存目录，避免缓存数据干扰：
+```
+rm -rf kernel_meta         # 算子编译生成的二进制*.so文件或*.o文件及算子描述文件*.json
+rm -rf .torchair_cache     # 图编译缓存
+rm -rf .cache              # 当前用户目录下的通用缓存目录
+rm -rf /root/.cache        # root用户的通用缓存目录
+rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
+```
+
 可在 `ray_start_npu.sh` 启动训练时添加参数，实现随机权重训练GRPO算法、真实权重训练GRPO算法、真实权重训练DAPO算法，对应修改如下：
 | 基础模型    | 训练 | 训练启动脚本| 训练配置脚本| 环境变量配置脚本 |
 |------|----------|----------|----------|----------|
