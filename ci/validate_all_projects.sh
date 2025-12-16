@@ -31,16 +31,28 @@ fi
 validate_project() {
     local PROJECT_NAME="$1"
 
+    # --- Step 1: Check patch naming ---
     echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
-    bash "${CI_DIR}/check_patch_names.sh"
+    if ! bash "${CI_DIR}/check_patch_names.sh"; then
+        echo -e "${RED}[ERROR] Patch naming validation failed.${RESET}" >&2
+        exit 1
+    fi
     echo -e "${GREEN}[OK] Patch names are valid.${RESET}"
 
+    # --- Step 2: Download dependencies ---
     echo -e "${CYAN}=== Step 2: Download dependencies ===${RESET}"
-    bash download_deps.sh
+    if ! bash download_deps.sh; then
+        echo -e "${RED}[ERROR] Failed to download dependencies.${RESET}" >&2
+        exit 1
+    fi
     echo -e "${GREEN}[OK] Dependencies downloaded.${RESET}"
 
+    # --- Step 3: Build project ---
     echo -e "${CYAN}=== Step 3: Build project ===${RESET}"
-    bash build_project.sh
+    if ! bash build_project.sh; then
+        echo -e "${RED}[ERROR] Project build failed.${RESET}" >&2
+        exit 1
+    fi
     echo -e "${GREEN}[OK] Project built.${RESET}"
 
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
