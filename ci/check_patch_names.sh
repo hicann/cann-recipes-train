@@ -59,7 +59,8 @@ check_subdir_patches() {
     done
 
     # Sequence check
-    IFS=$'\n' sorted=($(sort <<< "${nums[*]}"))
+    IFS=$'\n' 
+    sorted=($(sort <<< "${nums[*]}"))
     unset IFS
     for ((i=1; i<${#sorted[@]}; i++)); do
         prev="${sorted[$((i-1))]%%:*}"

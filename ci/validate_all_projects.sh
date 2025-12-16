@@ -10,26 +10,19 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-ROOT_DIR=$(pwd)
-echo $ROOT_DIR
-PROJECT_ROOT="${ROOT_DIR}/llm_rl"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "${ROOT_DIR}"
 CI_DIR="${ROOT_DIR}/ci"
 
 SCAN_LIST=(
-    "./llm_rl/qwen3"
+    "llm_rl/qwen3"
     # Other paths that needed check...
 )
 
 echo -e "${CYAN}=== Scanning projects ===${RESET}"
-echo "PROJECT_ROOT = ${PROJECT_ROOT}"
 
-if [ ! -d "${PROJECT_ROOT}" ]; then
-    echo -e "${RED}[ERROR] ${PROJECT_ROOT} does not exist${RESET}"
-    exit 1
-fi
 
 validate_project() {
-    local PROJECT_NAME="$1"
 
     # --- Step 1: Check patch naming ---
     echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
@@ -56,9 +49,11 @@ validate_project() {
     echo -e "${GREEN}[OK] Project built.${RESET}"
 
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
-
-    PATCH_LOG=$(bash {apply_all_patches.sh} 2>&1)
+    
+    set +e
+    PATCH_LOG=$(bash apply_all_patches.sh 2>&1)
     PATCH_STATUS=$?
+    set -e
 
     echo "$PATCH_LOG"
 
@@ -111,16 +106,11 @@ validate_project() {
 }
 
 for PROJECT in "${SCAN_LIST[@]}"; do
-    FULL_PATH="${ROOT_DIR}/${PROJECT#./}"
+    FULL_PATH="${ROOT_DIR}/${PROJECT}"
 
     [ -d "$FULL_PATH" ] || continue
 
     PROJECT_NAME=$(basename "$FULL_PATH")
-
-    if [[ " ${WHITELIST[@]} " =~ " ${PROJECT_NAME} " ]]; then
-        echo -e "${YELLOW}[SKIP] ${PROJECT_NAME} is whitelisted.${RESET}"
-        continue
-    fi
 
     echo -e "${CYAN}--- Running CI for project: ${PROJECT_NAME} ---${RESET}"
 
@@ -131,10 +121,10 @@ for PROJECT in "${SCAN_LIST[@]}"; do
         fi
     done
 
-    echo -e "${CYAN}Switching into ${PROJECT}${RESET}"
+    echo -e "${CYAN}Validating project ${PROJECT}${RESET}"
     pushd "${FULL_PATH}" >/dev/null
 
-    if ! validate_project "${PROJECT_NAME}"; then
+    if ! validate_project; then
         echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_NAME}${RESET}"
         popd >/dev/null
         exit 1
