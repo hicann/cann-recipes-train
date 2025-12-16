@@ -10,7 +10,7 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-ROOT_DIR="pwd"
+ROOT_DIR=$(pwd)
 PROJECT_ROOT="${ROOT_DIR}/llm_rl"
 
 # Whitelisted projects to skip
@@ -24,7 +24,7 @@ if [ ! -d "${PROJECT_ROOT}" ]; then
     exit 1
 fi
 
-run_project_ci() {
+validate_project() {
     local PROJECT_NAME="$1"
 
     echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
@@ -116,7 +116,7 @@ for PROJECT in "${PROJECT_ROOT}"/*; do
     echo -e "${CYAN}Switching into ${PROJECT}${RESET}"
     pushd "${PROJECT}" >/dev/null
 
-    if ! run_project_ci "${PROJECT_NAME}"; then
+    if ! validate_project "${PROJECT_NAME}"; then
         echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_NAME}${RESET}"
         popd >/dev/null
         exit 1
