@@ -23,3 +23,5 @@ cp -r /workspace/Megatron-LM/megatron/core ./megatron/core
 cp -r /workspace/MindSpeed/mindspeed ./
 cp -r /workspace/vllm/vllm ./
 cp -r /workspace/vllm-ascend/vllm_ascend ./
+
+ls -l
