@@ -1,0 +1,1 @@
+bash ./ci/validate_all_projects.sh
