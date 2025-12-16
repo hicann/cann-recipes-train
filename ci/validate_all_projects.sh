@@ -10,13 +10,16 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-ROOT_DIR=$(pwd)
+ROOT_DIR="${pwd}/../"
 PROJECT_ROOT="${ROOT_DIR}/llm_rl"
+CI_DIR="${ROOT_DIR}/ci"
 
-# Whitelisted projects to skip
-WHITELIST=("qwen2_5" "deepseek")
+SCAN_LIST=(
+    "./llm_rl/qwen3"
+    # Other paths that needed check...
+)
 
-echo -e "${CYAN}=== CI Wrapper: scanning llm_rl projects ===${RESET}"
+echo -e "${CYAN}=== Scanning projects ===${RESET}"
 echo "PROJECT_ROOT = ${PROJECT_ROOT}"
 
 if [ ! -d "${PROJECT_ROOT}" ]; then
@@ -28,7 +31,7 @@ validate_project() {
     local PROJECT_NAME="$1"
 
     echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
-    bash check_patch_names.sh
+    bash "${CI_DIR}/check_patch_names.sh"
     echo -e "${GREEN}[OK] Patch names are valid.${RESET}"
 
     echo -e "${CYAN}=== Step 2: Download dependencies ===${RESET}"
@@ -41,7 +44,7 @@ validate_project() {
 
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
 
-    PATCH_LOG=$(bash apply_all_patches.sh 2>&1)
+    PATCH_LOG=$(bash {apply_all_patches.sh} 2>&1)
     PATCH_STATUS=$?
 
     echo "$PATCH_LOG"
@@ -94,10 +97,12 @@ validate_project() {
     echo -e "${GREEN}=== Project CI completed successfully ===${RESET}"
 }
 
-for PROJECT in "${PROJECT_ROOT}"/*; do
-    [ -d "$PROJECT" ] || continue
+for PROJECT in "${SCAN_LIST[@]}"; do
+    FULL_PATH="${ROOT_DIR}/${PROJECT#./}"
 
-    PROJECT_NAME=$(basename "$PROJECT")
+    [ -d "$FULL_PATH" ] || continue
+
+    PROJECT_NAME=$(basename "$FULL_PATH")
 
     if [[ " ${WHITELIST[@]} " =~ " ${PROJECT_NAME} " ]]; then
         echo -e "${YELLOW}[SKIP] ${PROJECT_NAME} is whitelisted.${RESET}"
@@ -106,15 +111,15 @@ for PROJECT in "${PROJECT_ROOT}"/*; do
 
     echo -e "${CYAN}--- Running CI for project: ${PROJECT_NAME} ---${RESET}"
 
-    for f in download_deps.sh build_project.sh apply_all_patches.sh check_patch_names.sh; do
-        if [ ! -f "${PROJECT}/${f}" ]; then
+    for f in download_deps.sh build_project.sh apply_all_patches.sh; do
+        if [ ! -f "${FULL_PATH}/${f}" ]; then
             echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_NAME}${RESET}"
             exit 1
         fi
     done
 
     echo -e "${CYAN}Switching into ${PROJECT}${RESET}"
-    pushd "${PROJECT}" >/dev/null
+    pushd "${FULL_PATH}" >/dev/null
 
     if ! validate_project "${PROJECT_NAME}"; then
         echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_NAME}${RESET}"

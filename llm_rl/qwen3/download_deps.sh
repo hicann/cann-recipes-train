@@ -1,5 +1,7 @@
 set -ex
 
+HOME_DIR=$(pwd)
+
 mkdir -p /workspace && cd /workspace
 
 # 下载verl源码
@@ -34,4 +36,4 @@ cd vllm-ascend
 git checkout v0.11.0rc0
 cd -
 
-cd ../
+cd $HOME_DIR
