@@ -10,16 +10,16 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR=$(pwd)
+CI_DIR="$(cd ci && pwd)"
 echo "${ROOT_DIR}"
-CI_DIR="${ROOT_DIR}/ci"
 
 SCAN_LIST=(
     "llm_rl/qwen3"
     # Other paths that needed check...
 )
 
-echo -e "${CYAN}=== Scanning projects ===${RESET}"
+echo -e "${CYAN}=== CI Starts ===${RESET}"
 
 
 validate_project() {
@@ -108,15 +108,18 @@ validate_project() {
 for PROJECT in "${SCAN_LIST[@]}"; do
     FULL_PATH="${ROOT_DIR}/${PROJECT}"
 
-    [ -d "$FULL_PATH" ] || continue
+    if [ ! -d "$FULL_PATH" ]; then
+        echo -e "${YELLOW}[Warning] Project directory not found: ${FULL_PATH}${RESET}"
+        continue
+    fi
 
-    PROJECT_NAME=$(basename "$FULL_PATH")
+    PROJECT_BASENAME=$(basename "$FULL_PATH")
 
-    echo -e "${CYAN}--- Running CI for project: ${PROJECT_NAME} ---${RESET}"
+    echo -e "${CYAN}--- Running CI for project: ${PROJECT} ---${RESET}"
 
     for f in download_deps.sh build_project.sh apply_all_patches.sh; do
         if [ ! -f "${FULL_PATH}/${f}" ]; then
-            echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_NAME}${RESET}"
+            echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_BASENAME}${RESET}"
             exit 1
         fi
     done
@@ -125,14 +128,14 @@ for PROJECT in "${SCAN_LIST[@]}"; do
     pushd "${FULL_PATH}" >/dev/null
 
     if ! validate_project; then
-        echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_NAME}${RESET}"
+        echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_BASENAME}${RESET}"
         popd >/dev/null
         exit 1
     fi
 
-    echo -e "${GREEN}[OK] Project ${PROJECT_NAME} passed CI.${RESET}"
+    echo -e "${GREEN}[OK] Project ${PROJECT_BASENAME} passed CI.${RESET}"
     popd >/dev/null
 done
 
-echo -e "${GREEN}=== All eligible projects passed CI ===${RESET}"
+echo -e "${GREEN}=== All projects passed CI ===${RESET}"
 exit 0
