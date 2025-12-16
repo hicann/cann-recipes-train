@@ -10,7 +10,8 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-ROOT_DIR="${pwd}"
+ROOT_DIR=$(pwd)
+echo $ROOT_DIR
 PROJECT_ROOT="${ROOT_DIR}/llm_rl"
 CI_DIR="${ROOT_DIR}/ci"
 
