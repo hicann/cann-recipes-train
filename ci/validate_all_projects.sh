@@ -57,46 +57,34 @@ validate_project() {
 
     echo "$PATCH_LOG"
 
-    # Exit code failure
-    if [ $PATCH_STATUS -ne 0 ]; then
-        echo -e "${RED}[ERROR] apply_all_patches.sh failed.${RESET}"
-        echo ""
-        echo -e "${YELLOW}Failed patch details:${RESET}"
-
-        echo "$PATCH_LOG" | grep -i "\[FAIL\]" | while IFS= read -r line; do
-            PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
-            echo "  $PATCH_NAME"
-        done
-
-        exit 1
-    fi
-
-    # Log-detected failures
+    # Patch application failed. Some patch failed or are skipped during application.
     FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
-    if [ -n "$FAILED_PATCHES" ]; then
-        echo -e "${RED}[ERROR] A patch failed to apply.${RESET}"
-        echo ""
-        echo -e "${YELLOW}Failed patch details:${RESET}"
-
-        echo "$FAILED_PATCHES" | while IFS= read -r line; do
-            PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
-            echo "  $PATCH_NAME"
-        done
-
-        exit 1
-    fi
-
-    # Skipped patches are not allowed
     SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -i "skipped" || true)
-    if [ -n "$SKIPPED_PATCHES" ]; then
-        echo -e "${RED}[ERROR] One or more patches were skipped. Full application is required.${RESET}"
-        echo ""
-        echo -e "${YELLOW}Skipped patch details:${RESET}"
 
-        echo "$SKIPPED_PATCHES" | while IFS= read -r line; do
-            PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
-            echo "  $PATCH_NAME"
-        done
+    if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ] || [ -n "$SKIPPED_PATCHES" ]; then
+
+        echo -e "${RED}[ERROR] Patch application failed.${RESET}"
+        if [ -n "$FAILED_PATCHES" ]; then
+            echo -e "${YELLOW}Failed patches:${RESET}"
+
+            echo "$FAILED_PATCHES" | while IFS= read -r line; do
+                PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+                echo "  $PATCH_NAME"
+            done
+            echo ""
+        fi
+
+
+        if [ -n "$SKIPPED_PATCHES" ]; then
+            echo -e "${RED}[ERROR] One or more patches were skipped, breaking patch application.${RESET}"
+            echo -e "${YELLOW}Skipped patches:${RESET}"
+
+            echo "$SKIPPED_PATCHES" | while IFS= read -r line; do
+                PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+                echo "  $PATCH_NAME"
+            done
+            echo ""
+        fi
 
         exit 1
     fi
