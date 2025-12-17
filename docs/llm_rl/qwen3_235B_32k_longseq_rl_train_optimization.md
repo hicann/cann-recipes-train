@@ -9,7 +9,7 @@
 
 特别地，在强化学习场景中，模型不仅需要在超长上下文中进行复杂的思维链（CoT）推理与奖励训练，还面临**HBM内存消耗随序列长度线性增长、长尾序列分布导致负载不均等挑战**，这无疑对训练与推理系统的效率及稳定性提出了更高要求。
 
-针对上述问题，本实践在[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)基础上，沿用verl的前端，采用vLLM-Ascend作为推理引擎，MindSpeed作为训练引擎，在64卡A3集群上对Qwen3-235B模型进行了32K长序列GRPO算法的强化学习训练优化。本实践系统性地从**模型切分策略**、**长序列负载均衡**、**计算与通信效率**等多个维度入手，显著提升了长序列训练吞吐，最终实现122TPS/卡的系统性能。
+针对上述问题，本实践在[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)基础上，沿用verl的前端，采用vLLM-Ascend作为推理引擎，MindSpeed作为训练引擎，在64卡A3集群上对Qwen3-235B模型进行了32K长序列GRPO算法的强化学习训练优化。本实践系统性地从**模型切分策略**、**长序列负载均衡**、**计算与通信效率**等多个维度入手，显著提升了长序列训练吞吐，最终实现122TPS/卡的系统性能。
 
 值得一提的是，近期月之暗面&清华发布的论文[《Seer: Online Context Learning for Fast Synchronous LLM Reinforcement Learning》](https://arxiv.org/html/2511.14617v1)中，也提出了多项针对长序列强化学习的优化策略，与本实践的思路高度契合。本文也对其中的一部分策略进行了对比分析。
 
@@ -19,9 +19,9 @@
 
 -   训练引擎适配：verl框架当前已经原生支持MindSpeed训练引擎，但在开启moe\_alltoall\_overlap后会出现专家权重加载异常问题，本实践针对该问题进行了修复与适配。
 
--   推理引擎优化：推理过程中的sleep模式依赖torch\_npu的虚拟内存动态切换，目前采用[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)的方法实现推理权重及kv\_cache的加载与卸载。
+-   推理引擎优化：推理过程中的sleep模式依赖torch\_npu的虚拟内存动态切换，目前采用[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)的方法实现推理权重及kv\_cache的加载与卸载。
 
--   框架适配：参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)修改了verl框架，在GRPO这类on-policy训练算法中实现了old\_log\_prob免计算。
+-   框架适配：参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)修改了verl框架，在GRPO这类on-policy训练算法中实现了old\_log\_prob免计算。
 
 本实践针对长序列推理和训练中的性能瓶颈与内存占用，进行了系统性地优化，具体方法如下图所示：
 
@@ -225,12 +225,12 @@ KV Cache，其各自大小通过如下的方式确定：
 
 ### 2.2 计算与调度优化​
 
-本实践针对框架的计算和调度做了大量的优化，其中部分的通信及调度问题与[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)的优化是通用的，
-此处复用，具体实现参考[相关技术解析](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)。
+本实践针对框架的计算和调度做了大量的优化，其中部分的通信及调度问题与[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)的优化是通用的，
+此处复用，具体实现参考[相关技术解析](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)。
 
-1. 针对vLLM框架侧的调度优化：我们将其从Gloo后端的CPU侧通信修改为HCCL后端的NPU侧通信，显著降低通信延时，提升了整体的吞吐，具体参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)的 **“RL推理调度bound优化”**。
+1. 针对vLLM框架侧的调度优化：我们将其从Gloo后端的CPU侧通信修改为HCCL后端的NPU侧通信，显著降低通信延时，提升了整体的吞吐，具体参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)的 **“RL推理调度bound优化”**。
 
-2. 开启零冗余TP转EP通信优化，将MoE层内的StridedSlice和AllGather算子消除，具体参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)的 **“零冗余TP转EP通信优化”**。
+2. 开启零冗余TP转EP通信优化，将MoE层内的StridedSlice和AllGather算子消除，具体参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)的 **“零冗余TP转EP通信优化”**。
 
 本节则着重介绍在长序列场景下实现的4个新优化点。
 
@@ -281,7 +281,7 @@ KV Cache，其各自大小通过如下的方式确定：
 
 ##### 现象分析
 
-在RL推理场景下，如果PyTorch处于Eager模式，那么NPU在大部分时间里都会空闲，CPU侧算子调度开销会成为推理主要耗时。因此通常会使能图模式来减少CPU侧的调度开销，具体分析可以参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)的TorchAir整图下沉章节。
+在RL推理场景下，如果PyTorch处于Eager模式，那么NPU在大部分时间里都会空闲，CPU侧算子调度开销会成为推理主要耗时。因此通常会使能图模式来减少CPU侧的调度开销，具体分析可以参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)的TorchAir整图下沉章节。
 
 目前在verl+vLLM的框架下存在5种可用的图模式路径，我们主要对比了其中两种图模式，并选择了更适合本实践场景的GE图模式。
 
@@ -927,7 +927,7 @@ Roofline模型描述了理想情况下算子执行耗时受计算量和访存量
 
 ![](./figures/qwen3_figures/image30.png)
 
-需要注意的是，moe\_zero\_memory的开启前置条件是同时开启MoE层反向计算的自掩盖功能moe\_alltoall\_overlap\_comm，而后者在MindSpeed中的当前实现将会导致MoE层GMM的权重命名方式发生变化，进而影响到RL训练中的reshard流程。[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/deepseek/deepseek_rl_train_optimization.md)中实现了基于AlltoAllV的零冗余训推权重reshard方案提供了对这一场景的支持，有兴趣的读者可以移步了解相关的细节。
+需要注意的是，moe\_zero\_memory的开启前置条件是同时开启MoE层反向计算的自掩盖功能moe\_alltoall\_overlap\_comm，而后者在MindSpeed中的当前实现将会导致MoE层GMM的权重命名方式发生变化，进而影响到RL训练中的reshard流程。[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/docs/llm_rl/deepseek_rl_train_optimization.md)中实现了基于AlltoAllV的零冗余训推权重reshard方案提供了对这一场景的支持，有兴趣的读者可以移步了解相关的细节。
 
 #### 优化效果
 
