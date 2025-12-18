@@ -44,10 +44,9 @@ export HYDRA_FULL_ERROR=1                   # display the accurate error stack
 export RAY_DEDUP_LOGS=0                     # 0: disable ray's log folding 1: enable ray's log folding
 
 # HCCL
-export HCCL_CONNECT_TIMEOUT=900
-export HCCL_EXEC_TIMEOUT=900
+export HCCL_CONNECT_TIMEOUT=7200
+export HCCL_EXEC_TIMEOUT=7200
 export HCCL_IF_BASE_PORT=64021
-export HCCL_OP_EXPANSION_MODE=AIV
 export HCCL_BUFFSIZE=300
 export HCCL_HOST_SOCKET_PORT_RANGE="auto"
 

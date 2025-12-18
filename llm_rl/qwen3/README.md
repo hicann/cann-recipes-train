@@ -202,6 +202,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
 |vllm|[0003-vllm-feature-enabled_sam_spec_decode.patch](patches/vllm/0003-vllm-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
+|vllm|[0004-vllm-bugfix-set_hccl_op_expansion_mode.patch](patches/vllm/0004-vllm-bugfix-set_hccl_op_expansion_mode.patch)|手动修改TP通信域的hccl_op_extension_mode，修复all-gather超时的问题|
 |vllm|[vllm/v1/spec_decode/sam.py](patches/vllm/v1/spec_decode/sam.py)|SAM投机推理适配verl框架：实现SAM投机推理的核心能力|
 |vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
 |vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
