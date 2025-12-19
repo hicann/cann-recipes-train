@@ -12,7 +12,6 @@ RESET="\033[0m"
 # Resolve root directory
 ROOT_DIR=$(pwd)
 CI_DIR="$(cd ci && pwd)"
-echo "${ROOT_DIR}"
 
 SCAN_LIST=(
     "llm_rl/qwen3"
@@ -51,7 +50,18 @@ validate_project() {
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
     
     set +e
-    PATCH_LOG=$(bash apply_all_patches.sh 2>&1)
+    PATCH_ARGS=""
+
+    echo -e "Checking git environment..."
+    git rev-parse --is-inside-work-tree 2>&1
+    GIT_STATUS=$?
+
+    if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
+        PATCH_ARGS="-p3"
+        echo -e "${YELLOW}[Warning] Git environment unavailable. Using -p3 for the patches.${RESET}"
+    fi
+
+    PATCH_LOG=$(bash apply_all_patches.sh ${PATCH_ARGS} 2>&1)
     PATCH_STATUS=$?
     set -e
 
