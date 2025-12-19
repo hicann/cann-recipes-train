@@ -82,6 +82,7 @@ Atlas A2/A3系列产品。
     ```shell
     git clone https://github.com/volcengine/verl.git
     cd verl
+    # 切换至包含retool的历史版本（retool已从verl迁移至verl-recipe仓库，最新分支无该项目）
     git checkout 95470480
     
     # 使能patch修改
