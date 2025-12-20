@@ -23,6 +23,7 @@ echo -e "${CYAN}=== CI Starts ===${RESET}"
 apply_patches_without_git() {
     local PROJECT_DIR="$1"
 
+    # Apply the patches from the root dir, where .git is supposed to be.
     cd "${ROOT_DIR}"
     PATCH_DIR="${ROOT_DIR}/patches"
 
@@ -80,15 +81,18 @@ validate_project() {
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
     
     set +e
-
-    PATCH_LOG=$(bash apply_patches_without_git "${PROJECT}"  2>&1)
+    # Assume CI has no git availability.
+    PATCH_LOG=$(apply_patches_without_git "${PROJECT}"  2>&1)
     PATCH_STATUS=$?
     set -e
 
     echo "$PATCH_LOG"
 
-    # Patch application failed. Some patch failed or are skipped during application.
+    # Patch application failed. Some patch failed during application.
     FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
+    # Note: when applying a patch with wrong path WITH GIT AVAILABLE (the recommended way),
+    # it will be silently skipped; However applying it without git (common in CI)
+    # will raise an error, that's why there is no need to check for silent skips.
 
     if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ]; then
 

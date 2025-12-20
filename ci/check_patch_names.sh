@@ -16,23 +16,37 @@ check_root_patches() {
 
     for f in "${files[@]}"; do
         if [[ ! "$f" =~ ^([0-9]{4})\-(bugfix|feature)\-[A-Za-z0-9_]+\.patch$ ]]; then
-            ERRORS+=("[Root naming error] $ROOT/$f must follow: NNNN-(bugfix|feature)-description.patch (description must use underscores)")
+            ERRORS+=("[Naming error] $ROOT/$f must follow: NNNN-(bugfix|feature)-description.patch (description must use underscores)")
             continue
         fi
 
         nums+=("${BASH_REMATCH[1]}:$ROOT/$f")
     done
 
-    # Sequence check
-    IFS=$'\n' sorted=($(sort <<< "${nums[*]}"))
-    unset IFS
-    for ((i=1; i<${#sorted[@]}; i++)); do
-        prev="${sorted[$((i-1))]%%:*}"
-        curr="${sorted[$i]%%:*}"
-        if (( 10#$curr <= 10#$prev )); then
-            ERRORS+=("[Sequence error] ${sorted[$i]#*:} has a non-increasing sequence number")
+    # Sequence check: patch numbers must strictly increase by 1 (0001, 0002, 0003, ...)
+    if [[ ${#nums[@]} -gt 0 ]]; then
+        IFS=$'\n'
+        sorted=($(sort <<< "${nums[*]}"))
+        unset IFS
+
+        # Ensure first patch starts at 0001
+        first_seq="${sorted[0]%%:*}"
+        if (( 10#$first_seq != 1 )); then
+            ERRORS+=("[Number error] First patch must be 0001, but got $first_seq in ${sorted[0]#*:}")
         fi
-    done
+
+        # Check continuity.
+        for ((i=1; i < ${#sorted[@]}; i++)); do
+            prev_seq="${sorted[$((i-1))]%%:*}"
+            curr_seq="${sorted[$i]%%:*}"
+            expected=$(( 10#$prev_seq + 1 ))
+            actual=10#$curr_seq
+
+            if (( actual != expected )); then
+                ERRORS+=("[Number error] Expected sequence $expected, but got $curr_seq in ${sorted[$i]#*:}")
+            fi
+        done
+    fi
 }
 
 # -----------------------------------------
@@ -50,25 +64,47 @@ check_subdir_patches() {
     for f in "${files[@]}"; do
         local full="$subdir/$f"
 
-        if [[ ! "$f" =~ ^([0-9]{4})\-[A-Za-z0-9_]+\-(bugfix|feature)\-[A-Za-z0-9_]+\.patch$ ]]; then
+        if [[ ! "$f" =~ ^([0-9]{4})\-([A-Za-z0-9_]+)\-(bugfix|feature)\-([A-Za-z0-9_]+)\.patch$ ]]; then
             ERRORS+=("[Naming error] $full must follow: NNNN-module-(bugfix|feature)-description.patch (description must use underscores)")
             continue
         fi
 
         nums+=("${BASH_REMATCH[1]}:$full")
+        seq="${BASH_REMATCH[1]}"
+        module="${BASH_REMATCH[2]}"
+        expected_module="$(basename "$subdir")"
+    
+        if [[ "$module" != "$expected_module" ]]; then
+            ERRORS+=("[Module mismatch] $full: module '$module' does not match directory '$expected_module'")
+            continue
+        fi
+
     done
 
-    # Sequence check
-    IFS=$'\n' 
-    sorted=($(sort <<< "${nums[*]}"))
-    unset IFS
-    for ((i=1; i<${#sorted[@]}; i++)); do
-        prev="${sorted[$((i-1))]%%:*}"
-        curr="${sorted[$i]%%:*}"
-        if (( 10#$curr <= 10#$prev )); then
-            ERRORS+=("[Sequence error] ${sorted[$i]#*:} has a non-increasing sequence number")
+    # Sequence check: patch numbers must strictly increase by 1 (0001, 0002, 0003, ...)
+    if [[ ${#nums[@]} -gt 0 ]]; then
+        IFS=$'\n'
+        sorted=($(sort <<< "${nums[*]}"))
+        unset IFS
+
+        # Optional: ensure first patch starts at 0001
+        first_seq="${sorted[0]%%:*}"
+        if (( 10#$first_seq != 1 )); then
+            ERRORS+=("[Number error] First patch must be 0001, but got $first_seq in ${sorted[0]#*:}")
         fi
-    done
+
+        # Check continuity: each should be previous + 1
+        for ((i=1; i < ${#sorted[@]}; i++)); do
+            prev_seq="${sorted[$((i-1))]%%:*}"
+            curr_seq="${sorted[$i]%%:*}"
+            expected=$(( 10#$prev_seq + 1 ))
+            actual=10#$curr_seq
+
+            if (( actual != expected )); then
+                ERRORS+=("[Number error] Expected sequence $expected, but got $curr_seq in ${sorted[$i]#*:}")
+            fi
+        done
+    fi
 }
 
 # -----------------------------------------
