@@ -24,4 +24,3 @@ cp -r /workspace/MindSpeed/mindspeed ./
 cp -r /workspace/vllm/vllm ./
 cp -r /workspace/vllm-ascend/vllm_ascend ./
 
-ls -l

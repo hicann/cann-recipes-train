@@ -20,6 +20,35 @@ SCAN_LIST=(
 
 echo -e "${CYAN}=== CI Starts ===${RESET}"
 
+apply_patches_without_git() {
+    local PROJECT_DIR="$1"
+
+    cd "${ROOT_DIR}"
+    PATCH_DIR="${ROOT_DIR}/patches"
+
+    echo "Applying patches in numerical order..."
+
+    find "${PATCH_DIR}" -type f -name "*.patch" | \
+    sort -V | \
+
+    ## apply patch
+    while IFS= read -r PATCH_FILE; do
+        # skip empty lines
+        [[ -z "$PATCH_FILE" ]] && continue
+        PATCH_REL_PATH=$(realpath --relative-to=PROJECT_PATH "$PATCH_FILE")
+        
+        echo -n "Applying $PATCH_REL_PATH ... "
+
+        git apply -v --ignore-whitespace "$PATCH_REL_PATH"
+
+        if [ $? -ne 0 ]; then
+            echo "[FAIL]: $PATCH_REL_PATH" >&2
+            exit 1
+        fi
+        echo "[SUCCESS]: $PATCH_REL_PATH"
+    done
+
+}
 
 validate_project() {
 
@@ -45,23 +74,14 @@ validate_project() {
         echo -e "${RED}[ERROR] Project build failed.${RESET}" >&2
         exit 1
     fi
+    ls -l
     echo -e "${GREEN}[OK] Project built.${RESET}"
 
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
     
     set +e
-    PATCH_ARGS=""
 
-    echo -e "Checking git environment..."
-    git rev-parse --is-inside-work-tree 2>&1
-    GIT_STATUS=$?
-
-    if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
-        PATCH_ARGS="-p3"
-        echo -e "${YELLOW}[Warning] Git environment unavailable. Using -p3 for the patches.${RESET}"
-    fi
-
-    PATCH_LOG=$(bash apply_all_patches.sh ${PATCH_ARGS} 2>&1)
+    PATCH_LOG=$(bash apply_patches_without_git "${PROJECT}"  2>&1)
     PATCH_STATUS=$?
     set -e
 
@@ -69,27 +89,14 @@ validate_project() {
 
     # Patch application failed. Some patch failed or are skipped during application.
     FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
-    SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -i "skipped" || true)
 
-    if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ] || [ -n "$SKIPPED_PATCHES" ]; then
+    if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ]; then
 
         echo -e "${RED}[ERROR] Patch application failed.${RESET}"
         if [ -n "$FAILED_PATCHES" ]; then
             echo -e "${YELLOW}Failed patches:${RESET}"
 
             echo "$FAILED_PATCHES" | while IFS= read -r line; do
-                PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
-                echo "  $PATCH_NAME"
-            done
-            echo ""
-        fi
-
-
-        if [ -n "$SKIPPED_PATCHES" ]; then
-            echo -e "${RED}[ERROR] One or more patches were skipped, breaking patch application.${RESET}"
-            echo -e "${YELLOW}Skipped patches:${RESET}"
-
-            echo "$SKIPPED_PATCHES" | while IFS= read -r line; do
                 PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
                 echo "  $PATCH_NAME"
             done
