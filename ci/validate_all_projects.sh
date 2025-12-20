@@ -25,18 +25,16 @@ apply_patches_without_git() {
 
     # Apply the patches from the root dir, where .git is supposed to be.
     cd "${ROOT_DIR}"
-    PATCH_DIR="${ROOT_DIR}/patches"
+    PATCH_DIR="${PROJECT_DIR}/patches"
 
     echo "Applying patches in numerical order..."
 
-    find "${PATCH_DIR}" -type f -name "*.patch" | \
-    sort -V | \
 
     ## apply patch
     while IFS= read -r PATCH_FILE; do
         # skip empty lines
         [[ -z "$PATCH_FILE" ]] && continue
-        PATCH_REL_PATH=$(realpath --relative-to=PROJECT_PATH "$PATCH_FILE")
+        PATCH_REL_PATH=$(realpath --relative-to="$ROOT_DIR" "$PATCH_FILE")
         
         echo -n "Applying $PATCH_REL_PATH ... "
 
@@ -44,10 +42,12 @@ apply_patches_without_git() {
 
         if [ $? -ne 0 ]; then
             echo "[FAIL]: $PATCH_REL_PATH" >&2
-            exit 1
+            return 1
         fi
         echo "[SUCCESS]: $PATCH_REL_PATH"
-    done
+    done < <(
+            find "${PATCH_DIR}" -type f -name "*.patch" | sort -V
+    )
 
 }
 

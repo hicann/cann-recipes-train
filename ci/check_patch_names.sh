@@ -29,13 +29,13 @@ check_root_patches() {
         sorted=($(sort <<< "${nums[*]}"))
         unset IFS
 
-        # Ensure first patch starts at 0001
+        # Optional: ensure first patch starts at 0001
         first_seq="${sorted[0]%%:*}"
         if (( 10#$first_seq != 1 )); then
             ERRORS+=("[Number error] First patch must be 0001, but got $first_seq in ${sorted[0]#*:}")
         fi
 
-        # Check continuity.
+        # Check continuity: each should be previous + 1
         for ((i=1; i < ${#sorted[@]}; i++)); do
             prev_seq="${sorted[$((i-1))]%%:*}"
             curr_seq="${sorted[$i]%%:*}"
