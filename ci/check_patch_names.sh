@@ -29,13 +29,13 @@ check_root_patches() {
         sorted=($(sort <<< "${nums[*]}"))
         unset IFS
 
-        # Optional: ensure first patch starts at 0001
+        # Ensure first patch starts at 0001
         first_seq="${sorted[0]%%:*}"
         if (( 10#$first_seq != 1 )); then
             ERRORS+=("[Number error] First patch must be 0001, but got $first_seq in ${sorted[0]#*:}")
         fi
 
-        # Check continuity: each should be previous + 1
+        # Check sequence number continuity.
         for ((i=1; i < ${#sorted[@]}; i++)); do
             prev_seq="${sorted[$((i-1))]%%:*}"
             curr_seq="${sorted[$i]%%:*}"
@@ -87,7 +87,7 @@ check_subdir_patches() {
         sorted=($(sort <<< "${nums[*]}"))
         unset IFS
 
-        # Optional: ensure first patch starts at 0001
+        # Ensure first patch starts at 0001
         first_seq="${sorted[0]%%:*}"
         if (( 10#$first_seq != 1 )); then
             ERRORS+=("[Number error] First patch must be 0001, but got $first_seq in ${sorted[0]#*:}")
@@ -108,6 +108,29 @@ check_subdir_patches() {
 }
 
 # -----------------------------------------
+# Check if patch names appear in README.md.
+# -----------------------------------------
+check_patch_references_in_readme() {
+    local readme_path="README.md"
+    local -a patches=("$@")
+
+    if [[ ! -f "$readme_path" ]]; then
+        ERRORS+=("[Missing README.md] README.md is not found")
+        return
+    fi
+    
+    # Read the entire README file into a variable
+    readme_content=$(cat "$readme_path")
+    
+    # Check each patch file name appears in the README
+    for patch in "${patches[@]}"; do
+        if [[ "$readme_content" != *"$patch"* ]]; then
+            ERRORS+=("[Missing reference] Patch '$patch' is not mentioned in README.md.")
+        fi
+    done
+}
+
+# -----------------------------------------
 # Main logic
 # -----------------------------------------
 if [ ! -d "$ROOT" ]; then
@@ -123,6 +146,9 @@ done < <(find "$ROOT" -maxdepth 1 -type f -name "*.patch" -printf "%f\n")
 
 check_root_patches "${root_files[@]}"
 
+# Check root-level patches against root README.md (if it exists)
+check_patch_references_in_readme "${root_files[@]}"
+
 # Subdirectories (only level-1)
 while IFS= read -r sub; do
     subname=$(basename "$sub")
@@ -133,6 +159,9 @@ while IFS= read -r sub; do
     done < <(find "$sub" -maxdepth 1 -type f -name "*.patch" -printf "%f\n")
 
     check_subdir_patches "$sub" "${mod_files[@]}"
+    
+    # Check subdirectory patches against their respective README.md (if it exists)
+    check_patch_references_in_readme "${mod_files[@]}"
 
 done < <(find "$ROOT" -maxdepth 1 -mindepth 1 -type d)
 
@@ -147,5 +176,9 @@ if (( ${#ERRORS[@]} > 0 )); then
     exit 1
 fi
 
-echo "All patches follow the naming rules."
+echo "All patches follow the naming rules: "
+echo " - NNNN-(bugfix|feature)-description.patch/NNNN-module-(bugfix|feature)-description.patch"
+echo " - NNNN (Sequence number) are consecutive integers starting from 1."
+echo " - Description should use only underscores(_)."
+echo " - Appeared at least once in README.md."
 exit 0
