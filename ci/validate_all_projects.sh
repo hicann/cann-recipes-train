@@ -111,8 +111,8 @@ for PROJECT in "${SCAN_LIST[@]}"; do
     FULL_PATH="${ROOT_DIR}/${PROJECT}"
 
     if [ ! -d "$FULL_PATH" ]; then
-        echo -e "${YELLOW}[Warning] Project directory not found: ${FULL_PATH}${RESET}"
-        continue
+        echo -e "${RED}[ERROR] Project directory not found: ${FULL_PATH}${RESET}"
+        exit 1
     fi
 
     PROJECT_BASENAME=$(basename "$FULL_PATH")
