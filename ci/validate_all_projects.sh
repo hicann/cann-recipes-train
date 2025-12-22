@@ -10,8 +10,8 @@ CYAN="\033[36m"
 RESET="\033[0m"
 
 # Resolve root directory
-CI_DIR="$(cd "$(dirname ${BASH_SOURCE[0]})" && pwd)"
-ROOT_DIR="$(cd "${CI_DIR}" && pwd)"
+CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${CI_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
@@ -22,13 +22,27 @@ SCAN_LIST=(
 
 echo -e "${CYAN}=== CI Starts ===${RESET}"
 
+set +e
+echo -e "Checking git environment..."
+git rev-parse --is-inside-work-tree 2>&1
+GIT_STATUS=$?
+
+if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
+    git config --global --add safe.directory "$ROOT_DIR"
+    git init "${ROOT_DIR}"
+    echo -e "${YELLOW}[Warning] Git environment unavailable. Creating a shadow environment at the project root.${RESET}"
+else
+    echo -e "${GREEN}Git environment available.${RESET}"
+fi
+set -e
+
 validate_project() {
 
     # --- Step 1: Check patch naming ---
     echo -e "${CYAN}=== Step 1: Checking patch naming ===${RESET}"
     if ! bash "${CI_DIR}/check_patch_names.sh"; then
         echo -e "${RED}[ERROR] Patch naming validation failed.${RESET}" >&2
-        exit 1
+        return 1
     fi
     echo -e "${GREEN}[OK] Patch names are valid.${RESET}"
 
@@ -36,7 +50,7 @@ validate_project() {
     echo -e "${CYAN}=== Step 2: Download framework source code ===${RESET}"
     if ! bash download_frameworks_source_code.sh; then
         echo -e "${RED}[ERROR] Failed to download framework source code.${RESET}" >&2
-        exit 1
+        return 1
     fi
     echo -e "${GREEN}[OK] Framework source code downloaded.${RESET}"
 
@@ -44,7 +58,7 @@ validate_project() {
     echo -e "${CYAN}=== Step 3: Build project ===${RESET}"
     if ! bash build_project.sh; then
         echo -e "${RED}[ERROR] Project build failed.${RESET}" >&2
-        exit 1
+        return 1
     fi
     ls -l
     echo -e "${GREEN}[OK] Project built.${RESET}"
@@ -52,16 +66,6 @@ validate_project() {
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
     
     set +e
-
-    echo -e "Checking git environment..."
-    git rev-parse --is-inside-work-tree 2>&1
-    GIT_STATUS=$?
-
-    if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
-        git config --global --add safe.directory "$ROOT_DIR"
-        git init "${ROOT_DIR}"
-        echo -e "${YELLOW}[Warning] Git environment unavailable. Creating a shadow environment at the project root.${RESET}"
-    fi
 
     PATCH_LOG=$(bash apply_all_patches.sh 2>&1)
     PATCH_STATUS=$?
@@ -96,7 +100,7 @@ validate_project() {
             echo ""
         fi
 
-        exit 1
+        return 1
     fi
 
     echo -e "${GREEN}[OK] All patches applied successfully.${RESET}"
