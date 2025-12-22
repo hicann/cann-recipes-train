@@ -129,9 +129,12 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 # 配置环境变量 使能all_to_all_overlap
 export USE_ALLTOALL_OVERLAP=1
 
-# 执行权重切分，切分后权重保存至指定目录，例如 your_sharded_weights
-torchrun --nproc_per_node 16 --nnodes ${NNODES} --node_rank ${NODE_RANK} converter_hf_to_mcore.py \
---hf_model_path ${hf_model} --output_path ${output_path} --trust_remote_code --use_cpu_initialization
+# 单机执行权重切分，切分后权重保存至指定目录，修改"hf_model_path"为huggingface权重下载路径，"output_path"为切分权重保存路径
+torchrun --nproc_per_node 16 converter_hf_to_mcore.py \ 
+   --hf_model_path "your_hf_weights" \
+   --output_path "your_sharded_weights" \
+   --trust_remote_code \
+   --use_cpu_initialization
 ```
 
 ### Qwen3-32B
