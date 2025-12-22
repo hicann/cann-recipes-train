@@ -20,37 +20,6 @@ SCAN_LIST=(
 
 echo -e "${CYAN}=== CI Starts ===${RESET}"
 
-apply_patches_without_git() {
-    local PROJECT_DIR="$1"
-
-    # Apply the patches from the root dir, where .git is supposed to be.
-    cd "${ROOT_DIR}"
-    PATCH_DIR="${PROJECT_DIR}/patches"
-
-    echo "Applying patches in numerical order..."
-
-
-    ## apply patch
-    while IFS= read -r PATCH_FILE; do
-        # skip empty lines
-        [[ -z "$PATCH_FILE" ]] && continue
-        PATCH_REL_PATH=$(realpath --relative-to="$ROOT_DIR" "$PATCH_FILE")
-        
-        echo -n "Applying $PATCH_REL_PATH ... "
-
-        git apply -v --ignore-whitespace "$PATCH_REL_PATH"
-
-        if [ $? -ne 0 ]; then
-            echo "[FAIL]: $PATCH_REL_PATH" >&2
-            return 1
-        fi
-        echo "[SUCCESS]: $PATCH_REL_PATH"
-    done < <(
-            find "${PATCH_DIR}" -type f -name "*.patch" | sort -V
-    )
-
-}
-
 validate_project() {
 
     # --- Step 1: Check patch naming ---
@@ -100,17 +69,26 @@ validate_project() {
 
     # Patch application failed. Some patch failed during application.
     FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
-    SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -i "skipped" || true)
-    echo "SKIPPED: {$SKIPPED_PATCHES}"
+    SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -E 'Applying .* \.\.\. Skipped patch' || true)
 
-    if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ]; then
+    if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ] || [ -n "$SKIPPED_PATCHES" ]; then
 
         echo -e "${RED}[ERROR] Patch application failed.${RESET}"
         if [ -n "$FAILED_PATCHES" ]; then
-            echo -e "${YELLOW}Failed patches:${RESET}"
+            echo -e "${YELLOW}The following patches failed during application:${RESET}"
 
             echo "$FAILED_PATCHES" | while IFS= read -r line; do
                 PATCH_NAME=$(echo "$line" | sed -E 's/.*(patches\/[^ ]+\.patch).*/\1/')
+                echo "  $PATCH_NAME"
+            done
+            echo ""
+        fi
+
+        if [ -n "$SKIPPED_PATCHES" ]; then
+            echo -e "${YELLOW}The following patches were skipped silently, breaking patch application:${RESET}"
+
+            echo "$SKIPPED_PATCHES" | while IFS= read -r line; do
+                PATCH_NAME=$(echo "$line" | sed -E 's/.*Applying (patches\/[^ ]+\.patch).*/\1/')
                 echo "  $PATCH_NAME"
             done
             echo ""
