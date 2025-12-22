@@ -87,6 +87,7 @@ validate_project() {
     GIT_STATUS=$?
 
     if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
+        git config --global --add safe.directory "$ROOT_DIR"
         git init "${ROOT_DIR}"
         echo -e "${YELLOW}[Warning] Git environment unavailable. Creating a shadow environment at the project root.${RESET}"
     fi
