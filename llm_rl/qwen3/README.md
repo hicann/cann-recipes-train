@@ -230,45 +230,9 @@ bash ray_start_npu.sh TRAIN_SCRIPT ENV_SCRIPT
 
    为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他框架代码需要拉取。
 
-   在当前目录（cann-recipes-train/llm_rl/qwen3）执行如下命令，需注意，请确保环境能够正常连通网络。
-   ```bash
-   set -ex
-
-   mkdir -p /workspace && cd /workspace
-
-   # 下载verl源码
-   git clone https://github.com/volcengine/verl.git
-   cd verl
-   git checkout v0.6.0
-   git fetch origin pull/3427/head
-   git cherry-pick -n -X theirs 448c6c3
-   cd -
-
-   # 下载Megatron-LM源码
-   git clone https://github.com/NVIDIA/Megatron-LM.git
-   cd Megatron-LM
-   git checkout core_v0.12.1
-   cd -
-
-   # 下载MindSpeed源码
-   git clone https://gitcode.com/Ascend/MindSpeed.git
-   cd MindSpeed
-   git checkout f6688c61bcfe45243ee5eb34c6f013b1e06eca81
-   cd -
-
-   # 下载vLLM源码
-   git clone https://github.com/vllm-project/vllm.git
-   cd vllm
-   git checkout v0.11.0
-   cd -
-
-   # 下载vLLM-Ascend源码
-   git clone https://github.com/vllm-project/vllm-ascend.git
-   cd vllm-ascend
-   git checkout v0.11.0rc0
-   cd -
-
-   cd ../
+   在当前目录（cann-recipes-train/llm_rl/qwen3）执行如下脚本。请注意，确保当前环境能够访问互联网。
+   ```
+   bash download_frameworks_source_code.sh
    ```
 
 3. 源码编译安装vLLM和vLLM-Ascend。

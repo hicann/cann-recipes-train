@@ -61,13 +61,13 @@ validate_project() {
     fi
     echo -e "${GREEN}[OK] Patch names are valid.${RESET}"
 
-    # --- Step 2: Download dependencies ---
-    echo -e "${CYAN}=== Step 2: Download dependencies ===${RESET}"
-    if ! bash download_deps.sh; then
-        echo -e "${RED}[ERROR] Failed to download dependencies.${RESET}" >&2
+    # --- Step 2: Download framework source code ---
+    echo -e "${CYAN}=== Step 2: Download framework source code ===${RESET}"
+    if ! bash download_frameworks_source_code.sh; then
+        echo -e "${RED}[ERROR] Failed to download framework source code.${RESET}" >&2
         exit 1
     fi
-    echo -e "${GREEN}[OK] Dependencies downloaded.${RESET}"
+    echo -e "${GREEN}[OK] Framework source code downloaded.${RESET}"
 
     # --- Step 3: Build project ---
     echo -e "${CYAN}=== Step 3: Build project ===${RESET}"
@@ -81,8 +81,17 @@ validate_project() {
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
     
     set +e
-    # Assume CI has no git availability.
-    PATCH_LOG=$(apply_patches_without_git "${PROJECT}"  2>&1)
+
+    echo -e "Checking git environment..."
+    git rev-parse --is-inside-work-tree 2>&1
+    GIT_STATUS=$?
+
+    if [ ! -d "${ROOT_DIR}/.git" ] || [ $GIT_STATUS -ne 0 ]; then
+        git init "${ROOT_DIR}"
+        echo -e "${YELLOW}[Warning] Git environment unavailable. Creating a shadow environment at the project root.${RESET}"
+    fi
+
+    PATCH_LOG=$(bash apply_all_patches.sh 2>&1)
     PATCH_STATUS=$?
     set -e
 
@@ -90,9 +99,8 @@ validate_project() {
 
     # Patch application failed. Some patch failed during application.
     FAILED_PATCHES=$(echo "$PATCH_LOG" | grep -i "\[FAIL\]" || true)
-    # Note: when applying a patch with wrong path WITH GIT AVAILABLE (the recommended way),
-    # it will be silently skipped; However applying it without git (common in CI)
-    # will raise an error, that's why there is no need to check for silent skips.
+    SKIPPED_PATCHES=$(echo "$PATCH_LOG" | grep -i "skipped" || true)
+    echo "SKIPPED: {$SKIPPED_PATCHES}"
 
     if [ $PATCH_STATUS -ne 0 ] || [ -n "$FAILED_PATCHES" ]; then
 
@@ -126,7 +134,7 @@ for PROJECT in "${SCAN_LIST[@]}"; do
 
     echo -e "${CYAN}--- Running CI for project: ${PROJECT} ---${RESET}"
 
-    for f in download_deps.sh build_project.sh apply_all_patches.sh; do
+    for f in download_frameworks_source_code.sh build_project.sh apply_all_patches.sh; do
         if [ ! -f "${FULL_PATH}/${f}" ]; then
             echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_BASENAME}${RESET}"
             exit 1
