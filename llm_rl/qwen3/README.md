@@ -184,7 +184,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 ### 文件说明
 |上级目录|文件路径|说明|
 |-------|--------|--------|
-|megatron|[0001-megatron-bugfix-state_ten-verification.patch](patches/megatron/0001-megatron-bugfix-state_ten-verification.patch)|在处理优化器状态时新增空值判断，避免因空值导致的运行异常|
+|megatron|[0001-megatron-bugfix-state_ten_verification.patch](patches/megatron/0001-megatron-bugfix-state_ten_verification.patch)|在处理优化器状态时新增空值判断，避免因空值导致的运行异常|
 |megatron|[0002-megatron-feature-enable_hdp.patch](patches/megatron/0002-megatron-feature-enable_hdp.patch)|在ROPE中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
 |mindspeed|[0001-mindspeed-bugfix-builder.patch](patches/mindspeed/0001-mindspeed-bugfix-builder.patch)|兼容openeuler24.03版本下编译头文件缺失|
 |mindspeed|[0002-mindspeed-feature-enable_hdp.patch](patches/mindspeed/0002-mindspeed-feature-enable_hdp.patch)|在Ring Attention中增加HDP相关处理逻辑，`USE_HDP`开启时，使能HDP功能|
@@ -198,7 +198,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
 |verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 |verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
-|verl|[0011-verl-feature-enable-rollout-rebalance.patch](patches/verl/0011-verl-feature-enable-rollout-rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
+|verl|[0011-verl-feature-enable_rollout_rebalance.patch](patches/verl/0011-verl-feature-enable_rollout_rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
 |verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
 |verl|[0013-verl-bugfix-dataProto_concat.patch](patches/verl/0013-verl-bugfix-dataProto_concat.patch)|合并DataProto数据时，避免因不同节点的`data['timing']['generate_sequences']`存在细微差异导致报错|
 |verl|[0014-verl-feature-dapo_data_rebalance.patch](patches/verl/0014-verl-feature-dapo_data_rebalance.patch)|`data_rebalance` DAPO算法适配|
@@ -212,13 +212,13 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
 |vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
 |vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/vllm_ascend/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
-|vllm_ascend|[0006-vllm_ascend-feature-chunk-moe-eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk-moe-eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
+|vllm_ascend|[0006-vllm_ascend-feature-chunk_moe_eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk_moe_eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
 |vllm_ascend|[0007-vllm_ascend-bugfix-disabled_fia.patch](patches/vllm_ascend/0007-vllm_ascend-bugfix-disabled-fia.patch)|取消vllm_ascend的特殊逻辑，投机推理的算子从FusedInferAttention算子回调为PagedAttention算子，避免性能劣化|
 |vllm_ascend|[0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](patches/vllm_ascend/0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch)|增加投机推理特性自动开关，解决投机推理特性在batch_size过高时性能劣化的问题|
 |vllm_ascend|[0009-vllm_ascend-feature-rewrote_rejection_sampler.patch](patches/vllm_ascend/0009-vllm_ascend-feature-rewrote-rejection-sampler.patch)|重写vllm_ascend的rejectionsampler实现，优化性能|
 |vllm_ascend|[0010-vllm_ascend-feature-enabled_sam_spec_decode.patch](patches/vllm_ascend/0010-vllm_ascend-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm_ascend框架：适配vllm框架的改动|
 |vllm_ascend|[spec_decode/sam_proposer.py](patches/vllm_ascend/spec_decode/sam_proposer.py)|SAM投机推理适配vllm_ascend框架：实现`SAMProposer`类，作为vllm调用SAM投机推理能力的接口|
-|patches|[0001-feature-model-converter.patch](patches/0001-feature-model-converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑|
+|patches|[0001-feature-model_converter.patch](patches/0001-feature-model_converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑|
 
 ### 手动准备环境
 
@@ -256,46 +256,11 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 
    为了让使用者和开发者直观了解我们基于开源代码做的修改，本样例中只包含patch代码，其他框架代码需要拉取。
 
-   执行如下命令拉取本项目所依赖的框架代码，需注意，请确保环境能够正常连通网络。
+   在当前目录（cann-recipes-train/llm_rl/qwen3）执行如下脚本。请注意，确保当前环境能够访问互联网。
    ```bash
-   set -ex
-
-   mkdir -p /workspace && cd /workspace
-
-   # 下载verl源码
-   git clone https://github.com/volcengine/verl.git
-   cd verl
-   git checkout v0.6.0
-   git fetch origin pull/3427/head
-   git cherry-pick -n -X theirs 448c6c3
-   cd -
-
-   # 下载Megatron-LM源码
-   git clone https://github.com/NVIDIA/Megatron-LM.git
-   cd Megatron-LM
-   git checkout core_v0.12.1
-   cd -
-
-   # 下载MindSpeed源码
-   git clone https://gitcode.com/Ascend/MindSpeed.git
-   cd MindSpeed
-   git checkout f6688c61bcfe45243ee5eb34c6f013b1e06eca81
-   cd -
-
-   # 下载vLLM源码
-   git clone https://github.com/vllm-project/vllm.git
-   cd vllm
-   git checkout v0.11.0
-   cd -
-
-   # 下载vLLM-Ascend源码
-   git clone https://github.com/vllm-project/vllm-ascend.git
-   cd vllm-ascend
-   git checkout v0.11.0rc0
-   cd -
-
-   cd ../
+   bash download_frameworks_source_code.sh
    ```
+
 
 3. 源码编译安装vLLM和vLLM-Ascend。
    

@@ -60,6 +60,13 @@ pip install pre-commit
 pre-commit install
 ```
 
+#### 2.3 patch校验
+请在项目根目录下（cann-recipes-train/）执行`./ci/validate_all_projects.sh`以验证patch文件**命名规范**，并确保项目能够**基本构建**。
+基本构建包含以下步骤：
+1. 下载样例所需的框架代码，如verl, vllm, vllm_ascend等。
+2. 将框架代码复制到样例文件夹下，复刻原仓目录结构。
+3. 依次用`git apply`应用所有patch，确保改动能够正确应用，没有冲突。
+
 ### 3. 提交 PR，完善交付内容
 方案达成共识且代码开发完成后，请提交 PR 并关联 RFC Issue。PR 内容需包含：
 - **样例代码**：符合上述目录规范，并通过流水线 code check。
