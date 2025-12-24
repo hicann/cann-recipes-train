@@ -336,15 +336,14 @@ TensorBoard 是机器学习领域应用最广泛的可视化工具之一，支�
 
    ```shell
    # 将<directory_name>标记替换为本地保存数据的目录
-   tensorboard --logdir=<directory_name>
+   tensorboard --logdir=<directory_name> --bind_all
    ```
 
-   运行此命令后会出现如下提示，说明 TensorBoard 已成功运行，在浏览器中打开对应链接即可查看可视化训练数据。
+   运行此命令后会出现如下提示，说明 TensorBoard 已成功运行，在本机浏览器或局域网内的其他设备上打开`http://<你的IP地址>:6006/`即可查看可视化训练数据。
 
    ```shell
    # 输出示例
-   Serving TensorBoard on localhost; to expose to the network, use a proxy or pass --bind_all
-   TensorBoard 2.19.0 at http://localhost:6006/ (Press CTRL+C to quit)
+   TensorBoard 2.19.0 at http://<你的IP地址>:6006/ (Press CTRL+C to quit)
    ```
 
 ### 训练指标
