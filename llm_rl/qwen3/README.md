@@ -5,7 +5,7 @@
 
 针对Qwen3-235B-A22B RL训练全流程的优化适配，参见[Qwen3-235B 32K长序列RL训练优化实践](../../docs/llm_rl/qwen3_235B_32k_longseq_rl_train_optimization.md)。
 
-针对Qwen3-235B-A22B和Qwen3-32B上的SAM投机推理实践，参见[SAM投机推理：长序列强化学习训练加速利器](../../docs/llm_rl/sam_decoding.md)。
+针对Qwen3-32B上的SAM投机推理实践，参见[SAM投机推理：长序列强化学习训练加速利器](../../docs/llm_rl/sam_decoding.md)。
 
 ### Qwen3-235B-A22B
 
