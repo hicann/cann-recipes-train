@@ -16,8 +16,16 @@ cann-recipes-train仓库旨在针对LLM与多模态模型训练业务中的典�
 |[DeepSeek-R1 RL训练优化样例](llm_rl/deepseek/README.md) |基于开源veRL框架，搭配MindSpeed+vLLM-Ascend框架，在Atlas A3集群实现GRPO算法的高吞吐RL训练，并达到120TPS/卡的系统吞吐量。|
 |[基于verl框架的Qwen2.5强化学习（入门样例）](llm_rl/qwen2_5/verl_npu_demo/README.md) |基于Qwen2.5-1.5B-Instruct模型，采用verl强化学习框架，在MATH-lighteval数学推理数据集上进行了训练。本样例只需要单卡Atlas A2环境，帮助大家快速上手，使用昇腾NPU完成RL训练任务。|
 |[Qwen3-235B-A22B RL训练优化样例](llm_rl/qwen3/README.md) | 基于开源veRL框架，搭配MindSpeed+vLLM-Ascend框架，在Atlas A3集群实现GRPO/DAPO算法的**长序列 2k+32k**训练，GRPO达到120TPS/卡的系统吞吐量。|
-|[Qwen3-32B RL训练使能SAM投机推理样例](llm_rl/qwen3/README.md) | 基于开源veRLMindSpeed+vLLM-Ascend框架，在Atlas A3集群，GRPO/DAPO算法的2k+32k训练场景下，使能**SAM投机推理特性**，达成**10%性能提升**。|
+|[Qwen3-32B RL训练使能SAM投机推理样例](llm_rl/qwen3/README.md) | 基于开源veRL框架，搭配MindSpeed+vLLM-Ascend框架，在Atlas A3集群，GRPO/DAPO算法的2k+32k训练场景下，使能**SAM投机推理特性**，达成**10%性能提升**。|
 |[Qwen3 tool agent RL训练样例](agent_rl/qwen3_tool_agent/README.md) |基于verl/recipe中的retool项目，调用Sandbox工具，使能`asyncLLM`和`agent_loop`特性，在昇腾NPU上完成端到端agent RL训练任务。|
+
+## 特性介绍
+本项目在探索最佳实践的过程中引入了如下特性：
+
+|特性|介绍|
+|----|---|
+|SAM无损投机推理 |[docs/features/sam_speculative_decoding.md](docs/features/sam_speculative_decoding.md)|
+|RL On-Policy 推理场景的序列级均衡调度引擎| [docs/features/rollout_rebalance.md](docs/features/rollout_rebalance.md)|
 
 ## 📖目录结构说明
 

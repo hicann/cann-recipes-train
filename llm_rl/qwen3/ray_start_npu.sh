@@ -53,7 +53,6 @@ export HCCL_HOST_SOCKET_PORT_RANGE="auto"
 # vLLM
 export VLLM_USE_V1=1
 export VLLM_LOGGING_LEVEL=INFO
-export VLLM_DP_SIZE=32                      # [TODO] configure the DP size of vLLM based on actual training configration
 
 # vLLM-Ascend
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode

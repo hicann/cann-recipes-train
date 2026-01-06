@@ -11,39 +11,48 @@
 
 1. **GRPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，最优系统吞吐可达到120TPS/卡，性能测试结果如下：
 
-   | 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length | max_response_length | 端到端TPS |
+   | 基础模型             | 机器型号     | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | perf/throughput(端到端TPS) |
    |---------------------|----------|-----|-----------|--------- | ----------|------------|---------|
    | Qwen3-235B-A22B    | Atlas A3 64卡 | 512 | 16        | 1 |  2048             | 32768      | 120     |
 
 
 2. **DAPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与34K，性能测试结果如下：
 
-   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | 首步推理时间 | num_gen_batches |
+   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | perf/time_per_step(首步推理时间) | 最大重试batch数(num_gen_batches) |
    | --------------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | ------------ | --------------- |
    | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 16        | 1    | 2048              | 34816               | 6620s        | 2               |
 
 ### Qwen3-32B
 1. **GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
 
-   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | SAM投机推理    | 首步推理时间 | 提升 |
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理    | timing_s/generate_sequences(首步推理时间) | 提升 |
    | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 1950       | 13%     |
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2261       |      |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 2106       | 13%     |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2444       |      |
 
-2. **DAPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
+2. **DAPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
 
-   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length | max_response_length | SAM投机推理    | 首步推理时间 | 提升 |
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理    | timing_s/generate_sequences(首步推理时间) | 提升 |
    | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
    | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 2139       | 9%     |
    | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2367       |      |
 
 
 ## 硬件要求
+产品型号：Atlas A3 系列
 
-| 基础模型        | 产品型号      | 最少卡数 |
-| --------------- | ------------- | -------- |
-| Qwen3-235B-A22B | Atlas A3 系列 | 64       |
-| Qwen3-32B       | Atlas A3 系列 | 16       |
+操作系统：Linux ARM
+
+镜像版本：cann:8.3.rc1-a3-openeuler24.03-py3.11
+
+驱动版本：Ascend HDK 25.3.X 及其它兼容版本（见昇腾社区 [CANN版本兼容性文档](https://www.hiascend.com/document/detail/zh/canncommercial/83RC1/releasenote/releasenote_0000.html)）。
+
+不同模型所需的最小卡数不同：
+
+| 基础模型        |   最少卡数 |
+| --------------- |  -------- |
+| Qwen3-235B-A22B |  64       |
+| Qwen3-32B       |  16       |
 
 
 ## 基于Dockerfile构建环境
@@ -151,9 +160,11 @@ modelscope download --model Qwen/Qwen3-32B --local_dir ./Qwen3-32B
 
 ```bash
 # 请注意，以下bash启动脚本中的内容需要手动配置
+# -------- ray_start_npu.sh --------
 # source脚本路径：  根据实际CANN安装目录调整
 # MASTER_ADDR：    ray集群主节点的IP地址，每个节点的脚本配置一致
 # SOCKET_IFNAME：  集群中各节点自己的网卡名，可通过ifconfig命令查看
+# -------- internal/qwen3_235b_env.sh --------
 # VLLM_DP_SIZE:    推理阶段DP配置，按推理模型切分和总卡数计算
 
 bash ray_start_npu.sh TRAIN_SCRIPT ENV_SCRIPT
@@ -198,7 +209,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
 |verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 |verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
-|verl|[0011-verl-feature-enable_rollout_rebalance.patch](patches/verl/0011-verl-feature-enable_rollout_rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](patches/verl/features/rollout_optimize/README.md)|
+|verl|[0011-verl-feature-enable_rollout_rebalance.patch](patches/verl/0011-verl-feature-enable_rollout_rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](../../docs/features/rollout_rebalance.md)|
 |verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
 |verl|[0013-verl-bugfix-dataProto_concat.patch](patches/verl/0013-verl-bugfix-dataProto_concat.patch)|合并DataProto数据时，避免因不同节点的`data['timing']['generate_sequences']`存在细微差异导致报错|
 |verl|[0014-verl-feature-dapo_data_rebalance.patch](patches/verl/0014-verl-feature-dapo_data_rebalance.patch)|`data_rebalance` DAPO算法适配|
@@ -281,6 +292,5 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
    python3 -m pip install -v -e /workspace/vllm-ascend/ --exists-action=i --extra-index https://download.pytorch.org/whl/cpu/
 
    ```
-   
 
 后续步骤可参考[基于Dockerfile构建环境](#基于dockerfile构建环境) `2. 源码准备及安装所需的python依赖` 和 `3. 使能patch修改`。

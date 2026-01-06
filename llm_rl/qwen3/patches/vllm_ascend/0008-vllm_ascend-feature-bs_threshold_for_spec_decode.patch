@@ -23,7 +23,7 @@ index b0774fd..16b7b9c 100644
                                       MtpProposer]] = None
          self.actual_seq_lengths_q: list[int] = []
          self.decode_token_per_req = 1
-+        self.speculative_auto_bs_thre = int(os.environ.get('VLLM_SPECULATIVE_BATCH_SIZE_THRE', "32"))
++        self.speculative_auto_bs_thre = int(os.environ.get('VLLM_SPECULATIVE_BATCH_SIZE_THRE', "8"))
 +        # Indicates whether speculative decoding is active, 
 +        # set at runtime based on the batch-size threshold.
 +        self.speculative_decoding_active = False

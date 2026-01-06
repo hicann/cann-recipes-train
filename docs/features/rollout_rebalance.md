@@ -1,13 +1,33 @@
 # RL On-Policy 推理场景的序列级均衡调度引擎
 
 ## 1. 简介
-
-### 1.1 背景
 RLHF的Rollout阶段面临典型的“木桶效应”：由于输入Prompt所生成的响应（Response）长度存在长尾分布，少数极长的生成任务会拖慢整个DP组的进展。这使得处理短序列的节点在完成计算后不得不进入长时间的闲置等待，造成算力浪费。长尾问题优化的本质是RL训练系统的负载均衡，对此，我们针对单轮推理的同步场景，优化目标是提升进入长尾状态后的推理效率。
 
+## 2. 使用说明
+### 2.1 初始化配置
+在`verl/workers/megatron_workers.py`文件开头追加了以下代码，通过环境变量`ROLLOUT_REBALANCE_ENABLE=1`使能本特性功能：
+```python
+from patches.verl.features.rollout_optimize import init_rollout_rebalance
+init_rollout_rebalance()
+```
 
-### 1.2 解决方案
-本优化的核心目标是在On Policy场景中，针对部分rollout提前结束导致各rank间的负载不均时，对未结束的rollout进行负载均衡的策略分析和重调度，从而提升计算资源的利用率和长尾状态下的推理效率。
+### 2.2 配置项介绍
+可以直接在`config.py`中修改配置，或将以下配置写入verl启动的yaml中，在2.1节所写位置进行配置提取并传入init_rollout_rebalance方法。
+```python
+class RolloutRebalanceConfig:
+    enable = int(os.environ.get("ROLLOUT_REBALANCE_ENABLE", "0"))  # RolloutRebalance特性总开关
+    check_interval = 1000  # 间隔多少个step进行一次rebalance检查
+
+    multi_graph = True  # 是否开启多档位编图，如果关闭，rebalance依然会按预编图的档位做均衡调度，但是不会形成明显的性能收益
+    graph_batch_sizes = [64, 32, 16, 8, 4]  # 预编图的档位设置
+
+    profile = True  # 是否打印过程中的性能数据
+    profile_interval = 100   # 打印间隔步长
+```
+
+
+## 3. 实现方案
+本优化的核心目标是在On Policy场景中，针对部分Rollout提前结束导致各rank间的负载不均时，对未结束的Rollout进行负载均衡的策略分析和重调度，从而提升计算资源的利用率和长尾状态下的推理效率。
 
 前置依赖：
 vllm_ascend上在`torchair_graph_config`中提供了`use_cached_graph`和`graph_batch_sizes`的能力，支持提前配置多档位BatchSize的图，并随着剩余Seq减少时自动匹配最小BatchSize的图进行推理。
@@ -16,22 +36,7 @@ vllm_ascend上在`torchair_graph_config`中提供了`use_cached_graph`和`graph_
 1. Rebalance条件检测与调度策略生成；
 2. Request(SEQ)级的数据搬迁与恢复（包含对应的kvCache）；
 3. Rollout后的结果还原；
-
-
-### 1.3 实验结果
-我们在Atlas A3集群64卡环境上进行了如下实验，发现本方案开启后单轮推理耗时从10200s左右优化到约6100s，性能收益达60%左右。
-
-实验配置如下：
-* 模型：Qwen3 235B;
-* 数据集：deepscaler;
-* data.train_batch_size=512;
-* data.max_response_length=32768;
-* actor_rollout_ref.rollout.n=16;
-* TP=4; DP=32;
-
-性能收益主要来自于单个step的TPOT性能的差距，默认场景下的TPOT会从125ms上升到200ms，而通过使能Rebalance并配合多档位编图，能在1~2K推理长度时就快速将推理档位降低，让单个step的TPOT降低到60ms的量级，在长尾场景下，性能差距被持续放大。
-
-### 1.4 具体实现
+### 3.1 具体实现
 以下的详细代码均位于`rollout_rebalance.py`文件中：
 #### 全局状态感知
 ```python
@@ -283,24 +288,18 @@ vllm_ascend上在`torchair_graph_config`中提供了`use_cached_graph`和`graph_
                 layer_caches[i][new_block_ids] = cache_block[layer_index][reload_indexes]
 ```
 
-## 2. 使用说明
-### 2.1 初始化配置
-在`verl/workers/megatron_workers.py`文件开头追加了以下代码，通过环境变量`ROLLOUT_REBALANCE_ENABLE=1`使能本特性功能：
-```python
-from patches.verl.features.rollout_optimize import init_rollout_rebalance
-init_rollout_rebalance()
-```
+# 4. 使能效果
+我们在Atlas A3集群64卡环境上进行了如下实验，发现本方案开启后单轮推理耗时从10200s左右优化到约6100s，性能收益达60%左右。
 
-### 2.2 配置项介绍
-可以直接在`config.py`中修改配置，或将以下配置写入verl启动的yaml中，在2.1节所写位置进行配置提取并传入init_rollout_rebalance方法。
-```python
-class RolloutRebalanceConfig:
-    enable = int(os.environ.get("ROLLOUT_REBALANCE_ENABLE", "0"))  # RolloutRebalance特性总开关
-    check_interval = 1000  # 间隔多少个step进行一次rebalance检查
+实验配置如下：
+* 模型：Qwen3 235B;
+* 数据集：deepscaler;
+* data.train_batch_size=512;
+* data.max_response_length=32768;
+* actor_rollout_ref.rollout.n=16;
+* TP=4; DP=32;
 
-    multi_graph = True  # 是否开启多档位编图，如果关闭，rebalance依然会按预编图的档位做均衡调度，但是不会形成明显的性能收益
-    graph_batch_sizes = [64, 32, 16, 8, 4]  # 预编图的档位设置
+性能收益主要来自于单个step的TPOT性能的差距，默认场景下的TPOT会从125ms上升到200ms，而通过使能Rebalance并配合多档位编图，能在1~2K推理长度时就快速将推理档位降低，让单个step的TPOT降低到60ms的量级，在长尾场景下，性能差距被持续放大。
 
-    profile = True  # 是否打印过程中的性能数据
-    profile_interval = 100   # 打印间隔步长
-```
+
+
