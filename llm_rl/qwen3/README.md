@@ -213,6 +213,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
 |verl|[0013-verl-bugfix-dataProto_concat.patch](patches/verl/0013-verl-bugfix-dataProto_concat.patch)|合并DataProto数据时，避免因不同节点的`data['timing']['generate_sequences']`存在细微差异导致报错|
 |verl|[0014-verl-feature-dapo_data_rebalance.patch](patches/verl/0014-verl-feature-dapo_data_rebalance.patch)|`data_rebalance` DAPO算法适配|
+|verl|[0015-verl-feature-hdp_binpack_optimization.patch](patches/verl/0015-verl-feature-hdp_binpack_optimization.patch)|HDP binpack 优化：提升推理/rollout 场景下的打包与负载均衡效率（HDP 相关优化）|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
 |vllm|[0003-vllm-feature-enabled_sam_spec_decode.patch](patches/vllm/0003-vllm-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
