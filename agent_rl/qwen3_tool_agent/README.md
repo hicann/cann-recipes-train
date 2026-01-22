@@ -11,7 +11,8 @@
 
 ### 支持的产品型号
 
-Atlas A2/A3系列产品。
+Atlas A3系列产品。
+本样例所需计算资源：8卡A3（16die）
 
 ### 文件说明
 
@@ -128,12 +129,52 @@ Atlas A2/A3系列产品。
 
 1. 准备Sandbox环境。
 
-    参考[SandboxFusion/README.md](https://github.com/bytedance/SandboxFusion/blob/main/README.md)准备并启动Sandbox服务，启动成功后会显示如下信息：
+    参考[SandboxFusion/README.md](https://github.com/bytedance/SandboxFusion/blob/main/README.md)准备Sandbox服务，该README中提供了`Docker`和`Manual`两种安装方法，`Docker`安装方法需要获取服务器支持的镜像，如果无法获取，建议采用`Manual`安装方法，具体流程如下：
+
+    1）将SandboxFusion源码拉取到`cann-recipes-train/agent_rl/qwen3_tool_agent`目录下。
+
+    ```shell
+    git clone https://github.com/bytedance/SandboxFusion.git
+    cd SandboxFusion
+    ```
+
+    2）创建sandbox conda环境并安装依赖。
+
+    ```shell
+    conda create -n sandbox -y python=3.12
+    conda activate sandbox
+    pip install poetry
+    poetry install
+    mkdir -p docs/build
+    ```
+
+    3）创建sandbox-runtime conda环境并安装依赖。
+
+    ```shell
+    # 返回到cann-recipes-train/agent_rl/qwen3_tool_agent目录。
+    conda create -n sandbox-runtime -y python=3.10
+    conda activate sandbox-runtime
+
+    # 样例中的requirements-runtime.txt修改自SandboxFusion/runtime/python/requirements.txt，移除了安装失败的依赖包。
+    pip install -r requirements-runtime.txt
+    ```
+
+    4）启动Sandbox服务。
+
+    ```shell
+    cd SandboxFusion
+    conda activate sandbox
+    make run-online
+    ```
+
+    启动成功后会显示如下信息：
 
     ```shell
     INFO:     Application startup complete.
     INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
     ```
+
+    Sandbox服务启动后不要关闭，agent在训练时需要实时交互，重新打开一个终端进入容器和`qwen3_tool_agent/verl/recipe/retool`目录后再执行后续命令。
 
 2. 准备训练数据集和验证数据集。
 
@@ -163,7 +204,7 @@ Atlas A2/A3系列产品。
     - val-core/aime_2025/acc/mean@30: 0.57
     - val-aux/num_turns/mean: 5.4
     
-4. 训练后模型response样例：
+5. 训练后模型response样例：
 
     ![response样例](README.assets/response样例.png)
 
@@ -171,7 +212,7 @@ Atlas A2/A3系列产品。
     
     **问题输入$\longrightarrow$模型思考$\longrightarrow$调用代码工具$\longrightarrow$返回结果作为新一轮的输入$\longrightarrow$模型思考$\longrightarrow$生成答案**
     
-4. 关键训练曲线
+6. 关键训练曲线
 
     **val-core/aime_2025/acc/mean@30**：验证集的准确率。
 
