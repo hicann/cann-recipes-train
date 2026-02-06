@@ -7,6 +7,8 @@
 
 针对Qwen3-32B上的SAM投机推理实践，参见[SAM投机推理：长序列强化学习训练加速利器](../../docs/llm_rl/sam_decoding.md)。
 
+注：在当前版本，由于使用npugraph_ex替代了GE图模式，235B长序列优化实践文档中部分特性的patch已经失效，若想查看实践中完整的优化实现，请参考[v0.1.0版本](https://gitcode.com/cann/cann-recipes-train/tree/v0.1.0/llm_rl/qwen3)的代码。
+
 ### Qwen3-235B-A22B
 
 1. **GRPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，最优系统吞吐可达到120TPS/卡，性能测试结果如下：
@@ -18,24 +20,26 @@
 
 2. **DAPO算法RL训练**：基于Atlas A3 64卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与34K，性能测试结果如下：
 
-   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | perf/time_per_step(首步推理时间) | 最大重试batch数(num_gen_batches) |
+   | 基础模型        | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | perf/time_per_step(首步总时间) | 最大重试batch数(num_gen_batches) |
    | --------------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | ------------ | --------------- |
    | Qwen3-235B-A22B | Atlas A3 64卡 | 128 | 16        | 1    | 2048              | 34816               | 6620s        | 2               |
 
 ### Qwen3-32B
-1. **GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
+1. **GRPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用deepscaler数据集，Prefill/Decode阶段长度分别为2K与34K，开启/关闭SAM投机推理特性，同时开启/关闭npugraph_ex特性，性能测试结果如下：
 
-   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理    | timing_s/generate_sequences(首步推理时间) | 提升 |
-   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 2106       | 13%     |
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2444       |      |
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理 | npugraph_ex | timing_s/generate_sequences(首步推理时间) | 提升 |
+   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- |  --- | ------------ | --- | 
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭  | 关闭 | 2444       |      |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启  | 关闭 | 2106       | 13%     |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启  | 开启 | 1621       | 33%     |
 
-2. **DAPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与32K，开启/关闭SAM投机推理特性，性能测试结果如下：
+2. **DAPO算法RL训练**：针对Qwen3-32B模型，本样例基于Atlas A3 16卡集群，加载真实权重，使用dapo-math-17k数据集，Prefill/Decode阶段长度分别为2K与34K，开启/关闭SAM投机推理特性，同时开启/关闭npugraph_ex特性，性能测试结果如下：
 
-   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理    | timing_s/generate_sequences(首步推理时间) | 提升 |
-   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- | ------------ | --- | 
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 2139       | 9%     |
-   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 2367       |      |
+   | 基础模型  | 机器型号      | GBS | n_samples | step | max_prompt_length(最大输入长度) | max_response_length(最大输出长度) | SAM投机推理 | npugraph_ex | timing_s/generate_sequences(首步推理时间) | 提升 |
+   | --------- | ------------- | --- | --------- | ---- | ----------------- | ------------------- | --- |  --- | ------------ | --- | 
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 关闭    | 关闭 | 4562       |      |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 关闭 | 4109       | 10%     |
+   | Qwen3-32B | Atlas A3 16卡 | 128 | 16        | 1    | 2048              | 34816               | 开启    | 开启 | 3261       | 29%     |
 
 
 ## 硬件要求
@@ -43,9 +47,9 @@
 
 操作系统：Linux ARM
 
-镜像版本：cann:8.3.rc1-a3-openeuler24.03-py3.11
+镜像版本：cann:8.5.0-a3-openeuler24.03-py3.11
 
-驱动版本：Ascend HDK 25.3.X 及其它兼容版本（见昇腾社区 [CANN版本兼容性文档](https://www.hiascend.com/document/detail/zh/canncommercial/83RC1/releasenote/releasenote_0000.html)）。
+驱动版本：Ascend HDK 25.3.X 及其它兼容版本（见昇腾社区 [CANN版本兼容性文档](https://www.hiascend.com/document/detail/zh/canncommercial/850/releasenote/releasenote_0000.html)）。
 
 不同模型所需的最小卡数不同：
 
@@ -205,40 +209,35 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |verl|[0004-verl-feature-data_rebalance.patch](patches/verl/0004-verl-feature-data_rebalance.patch)|为缓解多卡推理时长尾负载不均，新增`data rebalance`，通过配置项控制启用；启用时执行固定重排序确保多卡之间推理prompt尽可能均衡|
 |verl|[0005-verl-feature-moe_alltoallv.patch](patches/verl/0005-verl-feature-moe_alltoallv.patch)|支持EP使用ALLToALLV做无通信冗余的reshard，通过专家参数定向路由方案优化内存使用和通信性能|
 |verl|[0006-verl-feature-weight_converter_alltoall_overlap.patch](patches/verl/0006-verl-feature-weight_converter_alltoall_overlap.patch)|完善Mcore到HF模型参数名转换逻辑|
-|verl|[0007-verl-feature-onload_offload.patch](patches/verl/0007-verl-feature-onload_offload.patch)|1.添加TorchAir图模式相关配置 2.由于NPU上vLLM的sleep模式可能存在内存卸载不干净的问题，改为手动实现NPU上Rollout模型及KV Cache的卸载和模型加载|
+|verl|[0007-verl-bugfix-moe_update_weights.patch](patches/verl/0007-verl-bugfix-moe_update_weights.patch)|修复训推转换时权重shape不一致的问题|
 |verl|[0008-verl-bugfix-enable_compile.patch](patches/verl/0008-verl-bugfix-enable_compile.patch)|NPU上MindSpeed训练框架会无效化torch.compile规避训练侧的compile失败，在推理时开启compile|
 |verl|[0009-verl-feature-support_EPLB.patch](patches/verl/0009-verl-feature-support_EPLB.patch)|`VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
 |verl|[0010-verl-feature-enable_hdp.patch](patches/verl/0010-verl-feature-enable_hdp.patch)|`USE_HDP`开启时，使能HDP功能|
 |verl|[0011-verl-feature-enable_rollout_rebalance.patch](patches/verl/0011-verl-feature-enable_rollout_rebalance.patch)|`ROLLOUT_REBALANCE_ENABLE`开启时，使能Rollout Rebalance功能，详细说明可参考[RL On-Policy 推理场景的序列级均衡调度引擎](../../docs/features/rollout_rebalance.md)|
-|verl|[0012-verl-feature-enabled_sam_spec_decode.patch](patches/verl/0012-verl-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配verl框架：允许通过脚本配置项开关SAM投机推理并配置相关参数|
+|verl|[0012-verl-feature-npugraph_ex_for_spec_decode.patch](patches/verl/0012-verl-feature-npugraph_ex_for_spec_decode.patch)|允许通过脚本配置项配置投机推理以及npugraph_ex相关参数|
 |verl|[0013-verl-bugfix-dataProto_concat.patch](patches/verl/0013-verl-bugfix-dataProto_concat.patch)|合并DataProto数据时，避免因不同节点的`data['timing']['generate_sequences']`存在细微差异导致报错|
 |verl|[0014-verl-feature-dapo_data_rebalance.patch](patches/verl/0014-verl-feature-dapo_data_rebalance.patch)|`data_rebalance` DAPO算法适配|
 |verl|[0015-verl-feature-hdp_binpack_optimization.patch](patches/verl/0015-verl-feature-hdp_binpack_optimization.patch)|HDP binpack 优化：提升推理/rollout 场景下的打包与负载均衡效率（HDP 相关优化）|
+|verl|[0016-verl-bugfix-hot_swap_expandable_segments.patch](patches/verl/0016-verl-bugfix-hot_swap_expandable_segments.patch)|在sleep mode下使能虚拟内存特性热切换|
+|verl|[0017-verl-bugfix-adapt_new_vllm_version.patch](0017-verl-bugfix-adapt_new_vllm_version.patch)|修复切换到vllm>=0.13.0版本引入的import error|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
-|vllm|[0002-vllm-feature-kv_cache_configs.patch](patches/vllm/0002-vllm-feature-kv_cache_configs.patch)|实现KV Cache可获取，通过初始化卸载KV Cache确保每次初始化始终调用初次申请的config，保证内存一致性|
-|vllm|[0003-vllm-feature-enabled_sam_spec_decode.patch](patches/vllm/0003-vllm-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
-|vllm|[0004-vllm-bugfix-set_hccl_op_expansion_mode.patch](patches/vllm/0004-vllm-bugfix-set_hccl_op_expansion_mode.patch)|手动修改TP通信域的hccl_op_extension_mode，修复all-gather超时的问题|
-|vllm|[vllm/v1/spec_decode/sam.py](patches/vllm/v1/spec_decode/sam.py)|SAM投机推理适配verl框架：实现SAM投机推理的核心能力|
-|vllm_ascend|[0001-vllm_ascend-feature-initialize_kv_cache.patch](patches/vllm_ascend/0001-vllm_ascend-feature-initialize_kv_cache.patch)|避免在KV Cache初始化时多次调用AttentionBackend初始化|
-|vllm_ascend|[0002-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0002-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，图模式实现|
-|vllm_ascend|[0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch](patches/vllm_ascend/0003-vllm_ascend-feature-enable_zero_tp_to_ep.patch)|零冗余TP转EP通信方案，将o_proj的AllReduce算子替换为ReduceScatter算子，减少冗余通信|
-|vllm_ascend|[0004-vllm_ascend-feature-dummy_run_load_balance.patch](patches/vllm_ascend/0004-vllm_ascend-feature-dummy_run_load_balance.patch)| 在dummy_run阶段强制负载均衡，优化内存分配|
-|vllm_ascend|[0005-vllm_ascend-feature-support_EPLB.patch](patches/vllm_ascend/0005-vllm_ascend-feature-support_EPLB.patch) | `VLLM_ENABLE_EPLB`开启时，使能推理的EPLB|
-|vllm_ascend|[0006-vllm_ascend-feature-chunk_moe_eager.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk_moe_eager.patch) | 针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高，单算子模式实现|
-|vllm_ascend|[0007-vllm_ascend-bugfix-disabled_fia.patch](patches/vllm_ascend/0007-vllm_ascend-bugfix-disabled-fia.patch)|取消vllm_ascend的特殊逻辑，投机推理的算子从FusedInferAttention算子回调为PagedAttention算子，避免性能劣化|
-|vllm_ascend|[0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](patches/vllm_ascend/0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch)|增加投机推理特性自动开关，解决投机推理特性在batch_size过高时性能劣化的问题|
-|vllm_ascend|[0009-vllm_ascend-feature-rewrote_rejection_sampler.patch](patches/vllm_ascend/0009-vllm_ascend-feature-rewrote-rejection-sampler.patch)|重写vllm_ascend的rejectionsampler实现，优化性能|
-|vllm_ascend|[0010-vllm_ascend-feature-enabled_sam_spec_decode.patch](patches/vllm_ascend/0010-vllm_ascend-feature-enabled_sam_spec_decode.patch)|SAM投机推理适配vllm_ascend框架：适配vllm框架的改动|
+|vllm|[0002-vllm-feature-enable_sam_decoding.patch](patches/vllm/0002-vllm-feature-enable_sam_decoding.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
+|vllm|[0003-vllm-bugfix-rope_registry.patch](patches/vllm/0003-vllm-bugfix-rope_registry.patch)|修复ROPE注册时import flash_attn的bug|
+|vllm_ascend|[0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](patches/vllm_ascend/0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch)|增加投机推理特性自动开关，解决投机推理特性在batch_size过高时性能劣化的问题|
+|vllm_ascend|[0002-vllm_ascend-feature-enable_sam_decoding.patch](patches/vllm_ascend/0002-vllm_ascend-feature-enable_sam_decoding.patch)|SAM投机推理适配vllm_ascend框架|
+|vllm-ascend|[0003-vllm_ascend-bugfix-set_hccl_op_expansion_mode.patch](patches/vllm/0003-vllm_ascend-bugfix-set_hccl_op_expansion_mode.patch)|手动修改TP通信域的hccl_op_extension_mode，修复all-gather超时的问题|
+|vllm-ascend|[0004-vllm_ascend-bugfix-npugraph_ex_static_kernel_typo.patch](patches/vllm/0004-vllm_ascend-bugfix-npugraph_ex_static_kernel_typo.patch)|修复npugraph_ex启用static_kernel时的bug|
+|vllm-ascend|[0005-vllm_ascend-bugfix-align_FIA_input_for_TND_layout.patch](patches/vllm/0005-vllm_ascend-bugfix-align_FIA_input_for_TND_layout.patch)|修复CANN 8.5.0版本FIA算子在TND格式下的入参padding问题|
 |vllm_ascend|[spec_decode/sam_proposer.py](patches/vllm_ascend/spec_decode/sam_proposer.py)|SAM投机推理适配vllm_ascend框架：实现`SAMProposer`类，作为vllm调用SAM投机推理能力的接口|
 |patches|[0001-feature-model_converter.patch](patches/0001-feature-model_converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑|
 
 ### 手动准备环境
 
-1. 创建CANN 8.3.RC1镜像。
+1. 创建CANN 8.5.0镜像。
 
    ```bash
    # 镜像下载
-   docker pull quay.io/ascend/cann:8.3.rc1-a3-openeuler24.03-py3.11
+   docker pull quay.io/ascend/cann:8.5.0-a3-openeuler24.03-py3.11
 
    # 执行以下脚本创建容器，请传入容器名称，如 your_docker_name
    docker run -itd \
@@ -254,7 +253,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
    -v /dev/shm:/dev/shm \
    --net=host \
    --name your_docker_name \
-   --privileged quay.io/ascend/cann:8.3.rc1-a3-openeuler24.03-py3.11 /bin/bash
+   --privileged quay.io/ascend/cann:8.5.0-a3-openeuler24.03-py3.11 /bin/bash
 
    # 执行docker exec命令进入容器
    docker exec -it -u root your_docker_name bash
@@ -278,7 +277,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
    
    vLLM:
    ```bash
-   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e /workspace/vllm/ --extra-index https://download.pytorch.org/whl/cpu/ && \
+   VLLM_TARGET_DEVICE="empty" python3 -m pip install -e /workspace/vllm/[audio] --extra-index https://download.pytorch.org/whl/cpu/ && \
    python3 -m pip uninstall -y triton && \
    python3 -m pip cache purge
    ```

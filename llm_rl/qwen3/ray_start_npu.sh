@@ -17,21 +17,21 @@ ray stop --force
 
 # torch
 export CUDA_DEVICE_MAX_CONNECTIONS=1
-export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
+export PYTORCH_NPU_ALLOC_CONF="garbage_collection_threshold:0.6,max_split_size_mb:24"
 # torch-npu
-export TASK_QUEUE_ENABLE=2
+export TASK_QUEUE_ENABLE=1
 
 # CANN
 # The default CANN installation path. If your installation directory differs, please adjust the paths accordingly. 
 export ASCEND_TOOLKIT_HOME=/usr/local/Ascend/ascend-toolkit/latest
-ASCEND_PROCESS_LOG_PATH__BACKUP=$ASCEND_PROCESS_LOG_PATH
 
 export ASCEND_HOME_PATH=/usr/local/Ascend/ascend-toolkit
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 source /usr/local/Ascend/nnal/asdsip/set_env.sh
 source /usr/local/Ascend/nnal/atb/set_env.sh
 
-export ASCEND_PROCESS_LOG_PATH=$ASCEND_PROCESS_LOG_PATH__BACKUP
+export ASCEND_CUSTOM_OPP_PATH=./vllm_ascend/_cann_ops_custom/vendors/vllm-ascend:${ASCEND_CUSTOM_OPP_PATH}
+export LD_LIBRARY_PATH=./vllm_ascend/_cann_ops_custom/vendors/vllm-ascend/op_api/lib/:${LD_LIBRARY_PATH}
 
 export ASCEND_LAUNCH_BLOCKING=0             # debug usage, which seriously affects performance after use, but the error stack is accurate
 export ASCEND_GLOBAL_EVENT_ENABLE=0         # whether to display the Ascend EVENT log; 1 is for display
@@ -57,6 +57,7 @@ export VLLM_LOGGING_LEVEL=INFO
 # vLLM-Ascend
 # under the configuration of the vLLM log level of INFO, enable this configuration, print the time of prefill and decode
 export VLLM_ASCEND_MODEL_EXECUTE_TIME_OBSERVE=0
+export VLLM_ASCEND_ENABLE_NZ=0
 
 export PYTHONUNBUFFERED=x
 

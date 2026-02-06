@@ -36,12 +36,13 @@ cd -
 
 git clone https://gitcode.com/GitHub_Trending/vl/vllm.git
 cd vllm
-git checkout v0.11.0
+git checkout v0.14.1
 cd -
 
 git clone https://gitcode.com/gh_mirrors/vl/vllm-ascend.git
 cd vllm-ascend
-git checkout v0.11.0rc0
+git checkout v0.14.0rc1
+git submodule update --init --recursive
 cd -
 
 cd $HOME_DIR
