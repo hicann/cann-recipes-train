@@ -60,17 +60,7 @@ Atlas A3系列产品。
     - `-w ${HOST_WORKSPACE}`为设置工作目录，进入后直接操作
     - `--name ${YOUR_CONTAINER_NAME}`为配置容器名
     
-2. 安装CANN软件包。
-
-    本样例依赖的CANN软件版本为`CANN：8.2.RC1`，请从[软件包下载地址](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.2.RC1)下载如下软件包，并参考[CANN安装文档](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1/softwareinst/instg/instg_0000.html?Mode=PmIns&InstallType=local&OS=Debian&Software=cannToolKit)进行安装。
-
-    - 开发套件包：`Ascend-cann-toolkit_${version}_linux-${arch}.run`
-    - 二进制算子包：`Ascend-cann-kernels-${chip_type}_${version}_linux-${arch}.run`
-    - NNAL加速包：`Ascend-cann-nnal_${version}_linux-${arch}.run`
-
-    软件包文件名中`${version}`表示CANN包版本号，`${arch}`表示CPU架构（如aarch64、x86_64）。
-
-3. 下载项目源码并安装依赖的python库。
+2. 下载项目源码并安装依赖的python库。
 
      ```shell
      git clone https://gitcode.com/cann/cann-recipes-train.git
@@ -78,7 +68,7 @@ Atlas A3系列产品。
      pip install -r requirements.txt
      ```
 
-4. 安装verl。
+3. 安装verl。
 
     ```shell
     git clone https://github.com/volcengine/verl.git
@@ -211,6 +201,8 @@ Atlas A3系列产品。
     从样例中可以看出，训练后的模型在解决问题的时候先使用大段的文本推理（图片中有所省略）对用户输入的问题进行分析，然后调用代码工具处理复杂的动态规划计算，代码工具计算出结果后作为新的输入传输给模型，模型对代码返回的结果校验后输出最终的答案。可以总结为如下流程：
     
     **问题输入$\longrightarrow$模型思考$\longrightarrow$调用代码工具$\longrightarrow$返回结果作为新一轮的输入$\longrightarrow$模型思考$\longrightarrow$生成答案**
+
+    模型response查看方法见[附录 TensorBorard使用方法](#TensorBoard)。
     
 6. 关键训练曲线
 
@@ -225,6 +217,8 @@ Atlas A3系列产品。
     **response_length/mean**：训练时单step模型的平均响应长度。
     
     <img src="README.assets/image-20251127110452948.png" alt="image-20251127110452948" style="zoom:80%;" />
+
+    训练曲线查看方法见[附录 TensorBorard使用方法](#TensorBoard)。
 
 ### 附录
 
@@ -249,3 +243,13 @@ Atlas A3系列产品。
 
 ![ToolAgent异步流水图](README.assets/ToolAgent异步流水图.png)
 
+#### TensorBoard使用方法<a id="TensorBoard"></a>
+
+TensorBoard的基础使用方法参考[前序工作](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/qwen2_5/verl_npu_demo/README.md#tensorboard)，按流程配置后打开链接即可查看训练曲线和模型response。
+
+本样例在使用TensorBoard时还需要注意以下几点：
+
+- 通过`run_qwen3_4b_dapo_npu.sh`脚本中的`trainer.logger=['console','tensorboard']`参数配置使用TensorBoard，默认已打开。
+- 通过`run_qwen3_4b_dapo_npu.sh`脚本中的`trainer.log_val_generations=10`参数配置查看每次验证时模型的response数，默认为10。
+- 本样例的TensorBoard日志输出路径为`qwen3_tool_agent/verl/recipe/retool/tensorboard_log/retool`。
+- 训练曲线在TensorBoard打开页面的`TIME SERIES`页签，验证response文本在`TEXT`页签。
