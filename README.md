@@ -1,10 +1,10 @@
 # cann-recipes-train
 
 ## 🚀Latest News
-- [2026/02] 新增Qwen3系列模型RL训练使能npugraph_ex图模式样例
-- [2025/12] 新增Qwen3系列模型RL训练使能SAM投机推理、tool agent RL样例
-- [2025/11] Qwen3模型长序列RL样例首次上线。
-- [2025/10] DeepSeek-R1、Qwen2.5模型样例首次上线。
+- [2026/02] 新增Qwen3系列模型RL训练使能[npugraph_ex图模式](llm_rl/qwen3/README.md)样例
+- [2025/12] 新增Qwen3系列模型RL训练使能[SAM投机推理](llm_rl/qwen3/README.md)、[tool agent RL](agent_rl/qwen3_tool_agent/README.md)样例
+- [2025/11] [Qwen3模型长序列RL](llm_rl/qwen3/README.md)样例首次上线。
+- [2025/10] [DeepSeek-R1](llm_rl/deepseek/README.md)、[Qwen2.5模型](llm_rl/qwen2_5/verl_npu_demo/README.md)样例首次上线。
 
 ## 🎉概述
 cann-recipes-train仓库旨在针对LLM与多模态模型训练业务中的典型模型、算法，提供基于CANN平台的优化样例，方便开发者简单、快速、高效地使用CANN平台进行模型训练。
