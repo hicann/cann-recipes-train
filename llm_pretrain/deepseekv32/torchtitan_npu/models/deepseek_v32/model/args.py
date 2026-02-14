@@ -23,3 +23,4 @@ class DeepSeekV32ModelArgs(DeepSeekV3ModelArgs):
     hf_save_dir: Optional[str] = None
     save_patch_enabled: bool = False
     moe_impl: str = "standard"
+    use_npu_grouped_mm: bool = False
