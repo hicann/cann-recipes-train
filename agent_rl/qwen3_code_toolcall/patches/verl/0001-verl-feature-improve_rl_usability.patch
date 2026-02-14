@@ -1,0 +1,88 @@
+From ba72f21470b6a5ebd47a7857f0f4ff58bef66e4e Mon Sep 17 00:00:00 2001
+From: Jason Zheng <zhengjiasheng2022@iscas.ac.cn>
+Date: Thu, 4 Dec 2025 23:36:16 +0800
+Subject: [PATCH] feat: support icip sandbox
+
+---
+ verl/utils/reward_score/__init__.py           |   2 +-
+ .../reward_score/sandbox_fusion/__init__.py   | 116 +++++-
+ verl/workers/reward_manager/prime.py          |  23 +-
+ 3 files changed, 134 insertions(+), 7 deletions(-)
+
+diff --git a/verl/utils/reward_score/__init__.py b/verl/utils/reward_score/__init__.py
+index b65d94ec..cc02adf7 100644
+--- a/verl/utils/reward_score/__init__.py
++++ b/verl/utils/reward_score/__init__.py
+@@ -71,7 +71,7 @@ def default_compute_score(
+         from . import prime_math
+
+         res = prime_math.compute_score(solution_str, ground_truth)
+-    elif data_source in ["codecontests", "apps", "codeforces", "taco"]:
++    elif data_source in ["codecontests", "code_contests", "apps", "codeforces", "taco"]:
+         # Use the passed sandbox_fusion_url if available
+         if sandbox_fusion_url:
+             from . import sandbox_fusion
+diff --git a/verl/workers/reward_manager/prime.py b/verl/workers/reward_manager/prime.py
+index ab7e5f95..3ceab301 100644
+--- a/verl/workers/reward_manager/prime.py
++++ b/verl/workers/reward_manager/prime.py
+@@ -34,7 +34,7 @@ async def single_compute_score(evaluation_func, completion, reference, task, tas
+         future = loop.run_in_executor(executor, partial(evaluation_func, task, completion, reference, task_extra_info))
+         return await asyncio.wait_for(future, timeout=timeout)
+     except asyncio.TimeoutError:
+-        print(f"[Timeout] Task timeout: {completion}")
++        print(f"[Timeout] Task timeout: {completion[:80]}")
+         return None  # Default value for timed-out rows
+     except Exception as e:
+         print(f"[Error] Task failed: {e}, completion: {completion[:80]}")
+@@ -53,7 +53,8 @@ async def parallel_compute_score_async(
+         try:
+             # Create tasks for all rows
+             tasks_async = [
+-                single_compute_score(evaluation_func, c, r, t, ei, executor, timeout=300.0)
++                # Increase timeout from 300s to 3000s to accommodate longer sandbox code execution time
++                single_compute_score(evaluation_func, c, r, t, ei, executor, timeout=3000.0)
+                 for c, r, t, ei in zip(completions, references, tasks, extra_info, strict=True)
+             ]
+             results = await asyncio.gather(*tasks_async, return_exceptions=False)
+@@ -137,7 +137,8 @@ class PrimeRewardManager(AbstractRewardManager):
+                 references=ground_truth,
+                 tasks=data_sources,
+                 extra_info=extra_info,
+-                num_processes=64,
++                # Reduce num_processes from 64 to 32 to avoid sandbox resource contention
++                num_processes=32,
+             )
+         except asyncio.TimeoutError:
+             print("[Timeout] Global reward scoring timed out. Setting all as 0.")
+@@ -172,6 +172,10 @@ class PrimeRewardManager(AbstractRewardManager):
+         valid_response_length = data.batch["attention_mask"][:, prompt_length:].sum(dim=-1)
+         sequences_str = self.tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+         data_sources = data.non_tensor_batch["data_source"]
++        try:
++            ground_truth = [data_item.non_tensor_batch["reward_model"]["ground_truth"] for data_item in data]
++        except Exception as e:
++            ground_truth = [None for _ in range(len(data))]
+
+         scores = self.verify(data)
+
+@@ -184,7 +188,16 @@ class PrimeRewardManager(AbstractRewardManager):
+
+             if already_print_data_sources[data_source] < self.num_examine:
+                 already_print_data_sources[data_source] += 1
+-                print(sequences_str)
++                # print(sequences_str)
++
++                prompt_str = self.tokenizer.decode(
++                    prompt_ids[i],
++                    skip_special_tokens=True,
++                )
++                print(f"[Sample {i}][prompt]", prompt_str)
++                print(f"[Sample {i}][response]", sequences_str[i])
++                print(f"[Sample {i}][ground_truth]", ground_truth[i])
++                print(f"[Sample {i}][score]", scores[i])
+
+         if return_dict:
+             return {"reward_tensor": reward_tensor}
+--
+2.34.1

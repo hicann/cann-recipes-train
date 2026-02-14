@@ -1,0 +1,40 @@
+# Copyright 2025 Chinese Information Processing Laboratory, ISCAS.
+# All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+tools:
+  - class_name: "verl.tools.scalebox_tool.ScaleBoxTool"
+    config:
+      scalebox_url: "http://localhost:8080/run_code"
+      default_timeout: 30
+      default_language: "python"
+      type: native
+    tool_schema:
+      type: "function"
+      function:
+        name: "code_interpreter"
+        description: "Execute code in the sandbox."
+        parameters:
+          type: "object"
+          properties:
+            code:
+              type: "string"
+              description: "The code to execute."
+            language:
+              type: "string"
+              description: "The programming language."
+            timeout:
+              type: "integer"
+              description: "Execution timeout in seconds."
+          required: ["code"]
