@@ -26,6 +26,8 @@
 | Model | Machine | GBS | n_samples | training_step | max_prompt_length | max_response_length | LiveCodeBench (pass@1) |
 |-|-|-|-|-|-|-|-|
 | DeepSeek-R1-Distill-Qwen-1.5B | Atlas A2 8卡 | 128 | 8 | 500 | 2048 | 8192 | 19.80 |
+| Qwen3-4B-Instruct-2507 | Atlas A3 16卡 | 128 | 8 | 450 | 2048 | 8192 | 44.18 |
+| Qwen3-30B-A3B-Instruct-2507 | Atlas A3 32卡 | 128 | 8 | 450 | 2048 | 8192 | 56.27 |
 
 ## 硬件要求
 
@@ -50,7 +52,9 @@ Atlas A2/A3 系列产品，单机八卡
 ├── verl_sandbox.Dockerfile                               # 环境部署文件
 ├── build_dataset.py                                      # 示例训练数据集构建脚本
 ├── scalebox.py                                           # verl适配ScaleBox的自定义奖励函数文件
-├── run_code_rl_demo.sh                                   # 示例训练脚本
+├── run_code_rl_qwen2_5_1_5b.sh                           # Qwen2.5示例训练脚本
+├── run_code_rl_qwen3_4b.sh                               # Qwen3示例训练脚本
+├── run_code_rl_qwen3_30b.sh                              # Qwen3示例训练脚本
 └── README.md                                             # 说明文档
 ```
 
@@ -178,7 +182,7 @@ python build_dataset.py
 
 ## 强化学习训练
 
-示例脚本`run_code_rl_demo.sh`中涉及：
+示例脚本`run_code_rl_qwen2_5_1_5b.sh`中涉及：
 
 - 模型：DeepSeek-R1-Distill-Qwen-1.5B
 - 数据：verifiable-coding-problems-python-only
@@ -188,7 +192,7 @@ python build_dataset.py
 
 ```bash
 source /home/ma-user/miniconda3/bin/activate base  # 激活训练环境
-bash run_code_rl_demo.sh
+bash run_code_rl_qwen2_5_1_5b.sh
 ```
 
 ## 模型评测
@@ -214,10 +218,14 @@ LiveCodeBench 评测数据相关参数：
 
 以下是本项目的实验结果，包括训练过程中的奖励变化和在 LiveCodeBench 评测集上的性能提升情况。
 
+#### DeepSeek-R1-Distill-Qwen-1.5B
+
 <p align="center">
-  <img src="figures/reward.png" width="400" />
-  <img src="figures/training_progress.png" width="400" />
+  <img src="figures/reward_deepseek_r1_distill_qwen_1_5b.png" width="400" />
+  <img src="figures/training_progress_deepseek_r1_distill_qwen_1_5b.png" width="400" />
 </p>
+
+具体性能结果：
 
 | Steps | LiveCodeBench (Pass@1) |
 |-------|------------------------|
@@ -232,3 +240,48 @@ LiveCodeBench 评测数据相关参数：
 | 400 | 18.37 |
 | 450 | 18.46 |
 | 500 | 19.80 |
+
+#### Qwen3-4B-Instruct-2507
+
+<p align="center">
+  <img src="figures/reward_qwen3_4b.png" width="400" />
+  <img src="figures/training_progress_qwen3_4b.png" width="400" />
+</p>
+
+具体性能结果：
+
+| Steps | LiveCodeBench (Pass@1) |
+|-------|------------------------|
+| 0   | 33.60 |
+| 50  | 34.86 |
+| 100 | 37.63 |
+| 150 | 38.26 |
+| 200 | 38.71 |
+| 250 | 39.96 |
+| 300 | 40.23 |
+| 350 | 41.67 |
+| 400 | 40.50 |
+| 450 | 44.18 |
+
+
+#### Qwen3-30B-A3B-Instruct-2507
+
+<p align="center">
+  <img src="figures/reward_qwen3_30b_a3b.png" width="400" />
+  <img src="figures/training_progress_qwen3_30b_a3b.png" width="400" />
+</p>
+
+具体性能结果：
+
+| Steps | LiveCodeBench (Pass@1) |
+|-------|------------------------|
+| 0   | 46.59 |
+| 50  | 47.85 |
+| 100 | 50.45 |
+| 150 | 51.34 |
+| 200 | 51.88 |
+| 250 | 51.52 |
+| 300 | 54.12 |
+| 350 | 53.94 |
+| 400 | 54.21 |
+| 450 | 56.27 |
