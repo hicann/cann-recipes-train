@@ -26,7 +26,7 @@
 
 ```shell
 mkdir -p /home/code && cd /home/code/
-git clone https://gitcode.com/cann/torchtitan-npu.git
+git clone -b v0.2.2-dev https://gitcode.com/cann/torchtitan-npu.git
 cd torchtitan-npu
 ```
 
@@ -133,8 +133,7 @@ python3 convert_model.py \
 
 ## 训练配置
 
-本次训练使用配置文件`./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml
-`
+本次训练使用配置文件 `./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml`。
 
 拉起训练前请重点确认以下路径配置与实际环境一致：
 
@@ -153,7 +152,7 @@ initial_load_path = "/data/models/DeepSeek-V4-Flash-bf16"
 
 ## 启动训练
 
-* 根据使用实际的网卡、节点 IP等，修改多机训练脚本配置，参考 `torchtitan-npu` [快速上手](https://gitcode.com/cann/torchtitan-npu/blob/master/docs/user-guides/quickstart.md) 文档中的“[多机训练任务](https://gitcode.com/cann/torchtitan-npu/blob/master/docs/user-guides/quickstart.md#多机训练任务)”一节。
+* 根据使用实际的网卡、节点 IP等，修改多机训练脚本配置，参考 `torchtitan-npu` [快速上手](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md) 文档中的“[多机训练任务](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md#多机训练任务)”一节。
 
 * 进入各节点上的 `torchtitan-npu` 源码目录后，在所有参与训练的节点上同时执行如下命令，即可启动 `DeepSeek-V4-Flash` 多机CPT训练任务：
 
