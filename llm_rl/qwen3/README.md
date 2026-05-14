@@ -193,6 +193,38 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 | Qwen3-32B          | 真实权重训练 GRPO算法 | `ray_start_npu.sh` | `./internal/train_grpo_qwen3_32b_32die_true_weight.sh` | `./internal/qwen3_32b_env.sh` |
 | Qwen3-32B          | 真实权重训练 DAPO算法 | `ray_start_npu.sh` | `./internal/train_dapo_qwen3_32b_32die_true_weight.sh` | `./internal/qwen3_32b_env.sh` |
 
+### 可选特性：Length-Aware Resampler
+
+针对 RL On-Policy Rollout 场景中常见的 response 长尾问题，本样例提供了一个可选的 Length-Aware Resampler 特性。该特性会利用上一轮 rollout 的 response 长度统计，在下一轮 epoch 开始前重新组织 prompt 顺序，尽量减少同一 generation batch 内“极长样本 + 极短样本”的混排。
+
+完成 `bash apply_all_patches.sh` 后，可通过以下 Hydra 配置启用：
+
+```bash
+data.sampler.class_path=pkg://verl.experimental.dataset.length_bucket_sampler
+data.sampler.class_name=LengthAwareEpochSampler
++data.sampler.bucket_size=1024
++data.sampler.ema_decay=0.7
++data.sampler.shuffle_batch_blocks=True
+data.dataloader_num_workers=0
+data.shuffle=False
+```
+
+可选的长尾保护环境变量：
+
+```bash
+export VLLM_ROLLOUT_EARLY_STOP_ENABLE=1
+export VLLM_ROLLOUT_EARLY_STOP_FACTOR=2.0
+export VLLM_ROLLOUT_EARLY_STOP_MIN_TOKENS=10000
+```
+
+本样例还提供了一个最小可复现脚本 [train_grpo_qwen3_resampler_example.sh](internal/train_grpo_qwen3_resampler_example.sh)。该脚本保留了 16 卡 GRPO、Megatron 并行配置和 resampler 相关参数，但移除了个人路径、profile 和 draft train 相关配置。使用前只需按实际环境设置 `MODEL_PATH`、`DISTCP_PATH`、`TRAIN_FILE`、`TEST_FILE`，然后在 `llm_rl/qwen3/` 目录下执行：
+
+```bash
+bash internal/train_grpo_qwen3_resampler_example.sh
+```
+
+该特性的设计背景、实现方案和收益说明可参考[Length-Aware Resampler：基于历史 Response 长度的 Rollout 重采样优化](../../docs/features/length_aware_resampler.md)。
+
 ## 附录
 
 ### 文件说明
@@ -222,6 +254,7 @@ rm -rf /root/atc_data/     # ATC编译的核心磁盘缓存
 |verl|[0016-verl-bugfix-hot_swap_expandable_segments.patch](patches/verl/0016-verl-bugfix-hot_swap_expandable_segments.patch)|在sleep mode下使能虚拟内存特性热切换|
 |verl|[0017-verl-bugfix-adapt_new_vllm_version.patch](patches/verl/0017-verl-bugfix-adapt_new_vllm_version.patch)|修复切换到vllm>=0.13.0版本引入的import error|
 |verl|[0018-verl-bugfix-ignore_redundant_logs.patch](patches/verl/0018-verl-bugfix-ignore_redundant_logs.patch)|去除多余的警告日志|
+|verl|[0019-verl-feature-length_aware_resampler.patch](patches/verl/0019-verl-feature-length_aware_resampler.patch)|新增 Length-Aware Resampler：基于历史 response 长度对 epoch 内样本重新排序，并提供可选的 rollout 长尾保护机制，详细说明可参考[Length-Aware Resampler：基于历史 Response 长度的 Rollout 重采样优化](../../docs/features/length_aware_resampler.md)|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-enable_sam_decoding.patch](patches/vllm/0002-vllm-feature-enable_sam_decoding.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
 |vllm|[0003-vllm-bugfix-rope_registry.patch](patches/vllm/0003-vllm-bugfix-rope_registry.patch)|修复ROPE注册时import flash_attn的bug|
