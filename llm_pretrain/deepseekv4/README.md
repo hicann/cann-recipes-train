@@ -1,12 +1,14 @@
-# 基于TorchTitan-NPU的DeepSeek-V4-Flash训练部署指导
+# 基于TorchTitan-NPU的 DeepSeek-V4 训练部署指导
 
 ## 概述
 
-本文面向 `torchtitan-npu` 仓中的 `DeepSeek-V4-Flash` 模型训练场景，介绍源码获取、数据准备、模型权重准备与 BF16 转换、镜像准备、Docker 容器拉起、训练配置说明以及多机训练启动方式。
+本文面向 `torchtitan-npu` 仓中的 `DeepSeek-V4-Flash` 模型以及 `DeepSeek-V4-Pro` 模型的训练场景，介绍源码获取、数据准备、模型权重准备与 BF16 转换、镜像准备、Docker 容器拉起、训练配置说明以及多机训练启动方式。
 
 本文的优化方案介绍和性能Benchmark可参见技术报告[DeepSeek-V4昇腾训练支持：基于CANN平台的TorchTitan-NPU + AutoFuse 极简训练优化实践](../../docs/llm_pretrain/deepseek-v4_torchtitan_npu_autofuse.md)。
 
 ## 硬件与软件要求
+
+### DeepSeek-V4-Flash 模型硬件与软件要求
 
 | 项目 | 要求 |
 | --- | --- |
@@ -15,6 +17,15 @@
 | 操作系统 | Linux ARM |
 | 驱动版本 | Ascend HDK 25.5.1 |
 | 镜像版本 | [dsv4_train_torchtitan:cann9.0.0.beta.1_v1.0](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_v1.0.tar.gz) |
+
+### DeepSeek-V4-Pro 模型硬件与软件要求
+| 项目 | 要求 |
+| --- | --- |
+| 产品型号 | Atlas A3 系列 |
+| 最小卡数要求 | 24机 192卡 A3 |
+| 操作系统 | Linux ARM |
+| 驱动版本 | Ascend HDK 25.5.1 |
+| 镜像版本 | [dsv4_train_torchtitan_cann9.0.0.beta.1_v2.0](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_cann9.0.0.beta.1_v2.0.tar.gz) |
 
 > [!NOTE]
 > 需使用npu-smi info 检查Ascend NPU固件和驱动正确安装，且版本为`25.5.1`。如果未安装或者版本不一致，请先下载[固件和驱动包](https://www.hiascend.com/hardware/firmware-drivers/community?product=7&model=33&cann=9.0.0-beta.2&driver=Ascend+HDK+25.5.1)，并根据[指导](https://hiascend.com/document/redirect/CannCommunityInstSoftware)自行安装。
@@ -30,15 +41,19 @@ git clone -b v0.2.2-dev https://gitcode.com/cann/torchtitan-npu.git
 cd torchtitan-npu
 ```
 
-本次训练使用的配置文件为：
+DeepSeek-V4-Flash模型训练使用的配置文件为：
 
 ```shell
 ./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml
 ```
 
-## 获取Docker镜像
+DeepSeek-V4-Pro模型训练使用的配置文件为：
 
-从[ARM镜像地址](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_v1.0.tar.gz)中下载 docker 镜像，然后上传到A3服务器的每个节点上，执行如下命令加载训练镜像：
+```shell
+./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_pro_61layers_4k_384die.toml
+```
+
+## 获取Docker镜像
 
 ```shell
 gunzip -c dsv4_train_torchtitan*.gz | docker load
@@ -47,15 +62,15 @@ gunzip -c dsv4_train_torchtitan*.gz | docker load
 加载后镜像版本如下：
 
 ```shell
-dsv4_train_torchtitan:cann9.0.0.beta.1_v1.0
+dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0
 ```
 
 ## 启动Docker容器
 
-执行如下命令启动容器：
+dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0镜像支持DeepSeek-V4-Flash模型和DeepSeek-V4-Pro模型，以该镜像的docker启动举例，执行如下命令启动容器：
 
 ```shell
-docker run -u root -itd --name dsv4_train_torchtitan_v1.0 --ulimit nproc=65535:65535 --ipc=host \
+docker run -u root -itd --name dsv4_train_torchtitan_v2.0 --ulimit nproc=65535:65535 --ipc=host \
     --device=/dev/davinci0     --device=/dev/davinci1 \
     --device=/dev/davinci2     --device=/dev/davinci3 \
     --device=/dev/davinci4     --device=/dev/davinci5 \
@@ -78,13 +93,13 @@ docker run -u root -itd --name dsv4_train_torchtitan_v1.0 --ulimit nproc=65535:6
     --net=host \
     --shm-size=128g \
     --privileged \
-    dsv4_train_torchtitan:cann9.0.0.beta.1_v1.0 /bin/bash
+    dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0 /bin/bash
 ```
 
 进入容器：
 
 ```shell
-docker exec -it dsv4_train_torchtitan_v1.0 /bin/bash
+docker exec -it dsv4_train_torchtitan_v2.0 /bin/bash
 ```
 
 在容器内执行环境变量初始化：
@@ -107,7 +122,9 @@ dataset_path = "./tests/assets/c4_test"
 
 ## 模型权重准备
 
-本样例使用 `DeepSeek-V4-Flash` 权重进行CPT训练，建议先从 [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) 下载原始权重和配置文件到统一目录，例如：
+### DeepSeek-V4-Flash 模型权重准备
+
+若使用 `DeepSeek-V4-Flash` 权重进行CPT训练，建议先从 [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) 下载原始权重和配置文件到统一目录，例如：
 
 ```shell
 mkdir -p /data/models/DeepSeek-V4-Flash
@@ -131,7 +148,35 @@ python3 convert_model.py \
   --quant_type bfloat16
 ```
 
+### DeepSeek-V4-Pro 模型权重准备
+
+若使用 `DeepSeek-V4-Pro` 权重进行CPT训练，建议先从 [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro) 下载原始权重和配置文件到统一目录，例如：
+
+```shell
+mkdir -p /data/models/DeepSeek-V4-Pro
+```
+
+将原始权重转换为 BF16 权重，输出目录与训练配置文件保持一致，例如：
+
+```shell
+mkdir -p /data/models/DeepSeek-V4-Pro-bf16
+```
+
+权重转换使用 `cann-recipes-train` 仓中的 `convert_model.py` 脚本。示例如下：
+
+```shell
+cd /home/code/
+git clone https://gitcode.com/cann/cann-recipes-train.git
+cd cann-recipes-train/llm_pretrain/deepseekv4/utils
+python3 convert_model.py \
+  --input_fp8_hf_path /data/models/DeepSeek-V4-Pro \
+  --output_hf_path /data/models/DeepSeek-V4-Pro-bf16 \
+  --quant_type bfloat16
+```
+
 ## 训练配置
+
+### DeepSeek-V4-Flash 训练配置
 
 本次训练使用配置文件 `./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml`。
 
@@ -150,6 +195,25 @@ initial_load_in_hf = true
 initial_load_path = "/data/models/DeepSeek-V4-Flash-bf16"
 ```
 
+### DeepSeek-V4-Pro 训练配置
+
+本次训练使用配置文件 `./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_pro_61layers_4k_384die.toml`。
+
+拉起训练前请重点确认以下路径配置与实际环境一致：
+
+```toml
+[model]
+hf_assets_path = "/data/models/DeepSeek-V4-Pro-bf16"
+
+[training]
+dataset = "c4_test"
+dataset_path = "./tests/assets/c4_test"
+
+[checkpoint]
+initial_load_in_hf = true
+initial_load_path = "/data/models/DeepSeek-V4-Pro-bf16"
+```
+
 ## 启动训练
 
 * 根据使用实际的网卡、节点 IP等，修改多机训练脚本配置，参考 `torchtitan-npu` [快速上手](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md) 文档中的“[多机训练任务](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md#多机训练任务)”一节。
@@ -158,5 +222,12 @@ initial_load_path = "/data/models/DeepSeek-V4-Flash-bf16"
 
 ```shell
 CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml \
+bash scripts/run_train_multinodes.sh
+```
+
+* 进入各节点上的 `torchtitan-npu` 源码目录后，在所有参与训练的节点上同时执行如下命令，即可启动 `DeepSeek-V4-Pro` 多机CPT训练任务：
+
+```shell
+CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_pro_61layers_4k_384die.toml \
 bash scripts/run_train_multinodes.sh
 ```
