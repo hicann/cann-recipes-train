@@ -25,7 +25,7 @@ cann-recipes-train仓库旨在针对LLM与多模态模型训练业务中的典�
 |[Qwen3-32B RL训练使能SAM投机推理样例](llm_rl/qwen3/README.md) | 基于开源veRL框架，搭配MindSpeed+vLLM-Ascend框架，在Atlas A3集群，GRPO/DAPO算法的2k+32k训练场景下，使能**SAM投机推理特性**，达成**10%性能提升**。|
 |[Qwen3 tool agent RL训练样例](agent_rl/qwen3_tool_agent/README.md) |基于verl/recipe中的retool项目，调用Sandbox工具，使能`asyncLLM`和`agent_loop`特性，在昇腾NPU上完成端到端agent RL训练任务。|
 |[基于ScaleBox沙盒的Code RL训练样例](agent_rl/qwen2_code_rl/README.md) |基于verl框架和ScaleBox代码沙盒，支持长上下文(2k+16k) Code RL训练，Qwen3-30B-A3B在LiveCodeBench上Pass@1从46.59提升至56.27。|
-|[DeepSeek-V3.2 Pretrain训练样例](llm_pretrain/deepseekv32/README.md) |基于torchtitan，在64卡Atlas A3集群上完成DeepSeek-V3.2模型32K长序列预训练复现。|
+|[DeepSeek-V3.2 Pretrain训练样例](llm_pretrain/deepseekv32/README.md) |基于torchtitan，在64卡Atlas A3集群上完成DeepSeek-V3.2模型32K长序列预训练复现，吞吐达成**148 TPS/卡**。|
 |[DeepSeek-V4-Flash 续训练样例](llm_pretrain/deepseekv4/README.md) |基于torchtitan + autufuse，使能**极简切分和训练入图**，在Atlas A3 64卡集群支持DeepSeek-V4-Flash-285B模型的续训练，吞吐达成**1100tokens/p/s**。|
 |[DeepSeek-V3 MXFP8/HiF8 低精度预训练样例](llm_pretrain/DeepSeekV3/README.md) |基于MindSpeed，在 8 卡 Atlas A5 环境上完成 DeepSeek-V3 裁剪模型8k序列预训练复现。|
 |[DeepSeek-V4-Pro 续训练样例](llm_pretrain/deepseekv4/README.md) |基于 torchtitan + autufuse，使能**极简切分和训练入图**，在Atlas A3 192卡集群支持 DeepSeek-V4-Pro 模型的续训练。|
