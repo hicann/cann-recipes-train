@@ -38,6 +38,7 @@ cann-recipes-train 针对该平台在相应样例 README 中提供了简化的�
 |实践|简介|
 |-----|-----|
 |[Qwen3-1.7B SFT训练样例](llm_sft/qwen3/README.md#一站式平台快速启动sft训练示例) |在一站式平台Atlas A2/A3环境中完成Qwen3-1.7B 单卡SFT训练。|
+|[Qwen2.5-1.5B RL训练样例](llm_rl/qwen2_5/verl_npu_demo/README_single.md) |在一站式平台Atlas A2/A3环境中基于verl框架完成Qwen2.5-1.5B-Instruct 单卡RL训练。|
 
 ## 💡 特性介绍
 本项目在探索最佳实践的过程中引入了如下特性：
