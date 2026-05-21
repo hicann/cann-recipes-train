@@ -202,7 +202,7 @@ Atlas A3系列产品。
     
     **问题输入$\longrightarrow$模型思考$\longrightarrow$调用代码工具$\longrightarrow$返回结果作为新一轮的输入$\longrightarrow$模型思考$\longrightarrow$生成答案**
 
-    模型response查看方法见[附录 TensorBorard使用方法](#TensorBoard)。
+    模型response查看方法见[附录 TensorBoard使用方法](#TensorBoard)。
     
 6. 关键训练曲线
 

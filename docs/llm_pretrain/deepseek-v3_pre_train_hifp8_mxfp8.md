@@ -199,7 +199,7 @@ TorchTitan 是 PyTorch 社区面向 GPU 环境开发的原生分布式训练框�
 
 **图 9：TorchTitan 模块化可组合的初始化流程示意图**
 
-TorchTian 支持 float8 和基于 Blackwell GPU 的 dense 和 MoE 模型的 MXFP8 量化训练。其低精度量化训练的大体流程如图 10 所示：在调用 `model_parts` 构建模型前，系统会通过 `model_converters.convert` 执行模型转换。当启用 MXFP8 配置时，普通线性层将被替换为低精度线性层。
+TorchTitan 支持 float8 和基于 Blackwell GPU 的 dense 和 MoE 模型的 MXFP8 量化训练。其低精度量化训练的大体流程如图 10 所示：在调用 `model_parts` 构建模型前，系统会通过 `model_converters.convert` 执行模型转换。当启用 MXFP8 配置时，普通线性层将被替换为低精度线性层。
 
 针对 MXFP8，当前主要包括两类转换路径：MXLinearConverter 和 MXGroupedMMConverter，分别面向线性层与 MoE 层。两类转换流程总体相似，主要包括初始化（init）和模型转换（convert）两个阶段。
 

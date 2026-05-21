@@ -307,7 +307,7 @@ additional_config={
 
 - collect\_fn：主进程收集每个worker的输出结果，并在batch维度拼接成一份完整结果。
 
-dispatch\_fn和collect\_fn分别做了输入tensor的split和输出tensor的concat操作，实际观察耗时很短。再分析execute\_fn，对应erl/single\_controller/ray/base.py中的execute\_all\_async函数，如下图所示。这里代码逻辑符合前面观察到的每个worker串行启动任务的现象，在第586行之前加时间打点可证实是串行任务下发导致不同worker任务启动存在时间差，进而导致训练侧表现出的性能差问题。
+dispatch\_fn和collect\_fn分别做了输入tensor的split和输出tensor的concat操作，实际观察耗时很短。再分析execute\_fn，对应verl/single\_controller/ray/base.py中的execute\_all\_async函数，如下图所示。这里代码逻辑符合前面观察到的每个worker串行启动任务的现象，在第586行之前加时间打点可证实是串行任务下发导致不同worker任务启动存在时间差，进而导致训练侧表现出的性能差问题。
 
 ![](./figures/deepseek_figures/image5.png)
 

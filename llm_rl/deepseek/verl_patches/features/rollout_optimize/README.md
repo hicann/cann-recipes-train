@@ -10,7 +10,7 @@ RLHF的Rollout阶段面临典型的“木桶效应”：由于输入Prompt所生
 本优化的核心目标是在On Policy场景中，针对部分rollout提前结束导致各rank间的负载不均时，对未结束的rollout进行负载均衡的策略分析和重调度，从而提升计算资源的利用率和长尾状态下的推理效率。
 
 前置依赖：
-vllm_asencd 091上在torchair_graph_config中提供了use_cached_graph和graph_batch_sizes的能力，支持提前配置多档位BS的图，并随着剩余Seq减少时自动匹配最小BS的图进行推理。
+vllm_ascend 091上在torchair_graph_config中提供了use_cached_graph和graph_batch_sizes的能力，支持提前配置多档位BS的图，并随着剩余Seq减少时自动匹配最小BS的图进行推理。
 
 本方案中包含以下关键功能实现：
 1. Rebalance条件检测与调度策略生成；

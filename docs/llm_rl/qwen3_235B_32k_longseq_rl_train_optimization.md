@@ -1038,7 +1038,7 @@ Roofline模型描述了理想情况下算子执行耗时受计算量和访存量
 
    -   以线性注意力（Linear Attention）、状态空间模型（如Mamba2）、近似注意力为代表的新兴技术，有望从根本上解决二次复杂度问题。
 
-   -   以DeepSeek代表的DSA(token-base)/NSA（block-base）等稀疏注意力、以及滑动窗口注意力等优化方案，可在长须列的场景下，保持性能的同时大幅降低计算开销。
+   -   以DeepSeek代表的DSA(token-base)/NSA（block-base）等稀疏注意力、以及滑动窗口注意力等优化方案，可在长序列的场景下，保持性能的同时大幅降低计算开销。
 
    -   Qwen-Next等新一代架构探索，将推动混合注意力机制向更高效、更可扩展的方向演进。当前我们也正在投入Qwen-Next网络的预训练优化，尝试在Ascend上基于Triton实现gated\_delta\_rule融合算子来快速优化模型训练性能，希望能在Ascend上探索出一条能快速适配算法结构创新的新路径。
 

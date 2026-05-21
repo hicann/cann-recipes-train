@@ -57,7 +57,7 @@ TorchTitan 将 PyTorch 生态中的工具系统集成，提供开箱即用的稳
 TorchTitan 提供了 **ModelConverter** 机制，作用在模型定义后、并行策略（TP/FSDP 等）应用之前，可以在不修改原始模型定义的前提下，通过注册机制对模型模块进行替换或重写，详细介绍请参考[官方文档](https://github.com/pytorch/TorchTitan/blob/v0.2.1/docs/extension.md?plain=1#L20)
 基于这套机制，我们设计了NPU插件化适配方案，预期目标是：
 
-- 不修改上游模型代码，方便跟踪上有更新
+- 不修改上游模型代码，方便跟踪上游更新
 - 支持优化项通过开关配置
 - 支持多种优化项自由组合
 

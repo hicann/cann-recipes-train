@@ -2,7 +2,7 @@
 
 ## 概述
 
-本样例针对DeepSeek-V3 裁剪模型，基于[MindSpeed 框架](https://gitcode.com/Ascend/MindSpeed)，在 8 卡 Atlas A5 上完成完成8K序列MXFP8/HiF8 低精度预训练优。MXFP8/HiF8 低精度预训练介绍可参见[HiF8精度与性能双优：面向大模型训练的低精度优化实践](../../docs/llm_pretrain/deepseev3_pre_train_hifp8_mxfp8.md)。
+本样例针对DeepSeek-V3 裁剪模型，基于[MindSpeed 框架](https://gitcode.com/Ascend/MindSpeed)，在 8 卡 Atlas A5 上完成8K序列MXFP8/HiF8 低精度预训练优。MXFP8/HiF8 低精度预训练介绍可参见[HiF8精度与性能双优：面向大模型训练的低精度优化实践](../../docs/llm_pretrain/deepseev3_pre_train_hifp8_mxfp8.md)。
 
 ## 硬件要求
 产品型号：Atlas A5 950DT 系列
@@ -117,7 +117,7 @@ export HCCL_TOPO_FILE_PATH=/etc/superpod_1d_noroce.json
 export HCCL_CONNECT_TIMEOUT=200
 export HCCL_EXEC_TIMEOUT=200
 
-# 示例执行 MXPF8 量化训练，2层（1moe，1dense）裁剪模型
+# 示例执行 MXFP8 量化训练，2层（1moe，1dense）裁剪模型
 bash ./run_pretrain_dsk3_A5_8P_mxfp8.sh
 
 # 示例执行 HiF8 量化训练，2层（1moe，1dense）裁剪模型
