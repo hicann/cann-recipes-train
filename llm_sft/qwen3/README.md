@@ -151,27 +151,27 @@ alpaca风格数据示例：
 
 - 并行配置，需要和模型转换的参数**保持一致**
 
-   | 参数 | 说明 | 默认值 |
-   |------|------|--------|
-   | `TP` | 张量并行大小 | 1 |
-   | `PP` | 流水线并行大小 | 1 |
-   | `CP` | 上下文并行大小 | 1 |
-   | `CP_TYPE` | 上下文并行算法 | ulysses_cp_algo |
+   | 参数 | 说明 |
+   |------|------|
+   | `TP` | 张量并行大小 |
+   | `PP` | 流水线并行大小 |
+   | `CP` | 上下文并行大小 |
+   | `CP_TYPE` | 上下文并行算法 |
 
 - 训练配置
 
-   | 参数 | 说明 | 默认值 |
-   |------|------|--------|
-   | `SEQ_LENGTH` | 序列长度 | 4096 |
-   | `TRAIN_ITERS` | 训练迭代次数 | 2000 |
-   | `--micro-batch-size` | 单卡batch size | 1 |
-   | `--global-batch-size` | 全局batch size | 32 |
-   | `--lr` | 学习率 | 1.25e-6 |
-   | `--lr-decay-style` | 学习率衰减方式 | cosine |
-   | `--min-lr` | 最小学习率 | 1.25e-7 |
-   | `--weight-decay` | 权重衰减 | 0.1 |
-   | `--lr-warmup-fraction` | 预热比例 | 0.01 |
-   | `--clip-grad` | 梯度裁剪 | 1.0 |
+   | 参数 | 说明 |
+   |------|------|
+   | `SEQ_LENGTH` | 序列长度 |
+   | `TRAIN_ITERS` | 训练迭代次数 |
+   | `--micro-batch-size` | 单卡batch size |
+   | `--global-batch-size` | 全局batch size |
+   | `--lr` | 学习率 |
+   | `--lr-decay-style` | 学习率衰减方式 |
+   | `--min-lr` | 最小学习率 |
+   | `--weight-decay` | 权重衰减 |
+   | `--lr-warmup-fraction` | 预热比例 |
+   | `--clip-grad` | 梯度裁剪 |
 
 - 微调参数
 
