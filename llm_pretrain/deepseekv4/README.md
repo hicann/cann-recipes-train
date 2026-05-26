@@ -8,27 +8,23 @@
 
 ## 硬件与软件要求
 
-### DeepSeek-V4-Flash 模型硬件与软件要求
-
+### DeepSeek-V4-Flash/DeepSeek-V4-Pro 模型基于[v0.2.2-dev分支](https://gitcode.com/cann/torchtitan-npu/tree/v0.2.2-dev)的硬件与软件要求
 | 项目 | 要求 |
 | --- | --- |
 | 产品型号 | Atlas A3 系列 |
-| 最小卡数要求 | 8机 64卡 A3 |
+| 最小卡数要求 | Flash 8 机 64 卡 A3, Pro 24 机 192 卡 A3 |
 | 操作系统 | Linux ARM |
-| 驱动版本 | Ascend HDK 25.5.1 |
-| 镜像版本 | [dsv4_train_torchtitan:cann9.0.0.beta.1_v1.0](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_v1.0.tar.gz) |
-
-### DeepSeek-V4-Pro 模型硬件与软件要求
-| 项目 | 要求 |
-| --- | --- |
-| 产品型号 | Atlas A3 系列 |
-| 最小卡数要求 | 24机 192卡 A3 |
-| 操作系统 | Linux ARM |
-| 驱动版本 | Ascend HDK 25.5.1 |
-| 镜像版本 | [dsv4_train_torchtitan_cann9.0.0.beta.1_v2.0](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_cann9.0.0.beta.1_v2.0.tar.gz) |
+| 驱动版本 | Ascend HDK 25.5.2 |
+| CANN版本 | 9.0.0 |
+| 镜像版本 | [dsv4_train_torchtitan_cann9.0.0_v3.0](https://cann-ai.obs.cn-north-4.myhuaweicloud.com/cann-quantization/deepseek_train/dsv4_train_torchtitan_cann9.0.0_v3.0.tar.gz) |
 
 > [!NOTE]
-> 需使用npu-smi info 检查Ascend NPU固件和驱动正确安装，且版本为`25.5.1`。如果未安装或者版本不一致，请先下载[固件和驱动包](https://www.hiascend.com/hardware/firmware-drivers/community?product=7&model=33&cann=9.0.0-beta.2&driver=Ascend+HDK+25.5.1)，并根据[指导](https://hiascend.com/document/redirect/CannCommunityInstSoftware)自行安装。
+> **安装校验与版本选择建议：**
+>
+> 1. 请使用 `npu-smi info` 检查 Ascend NPU **固件**与**驱动**是否正确安装且版本匹配。
+> 2. 若需要支持 **[虚拟优化器特性](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/feature_guides/virtual_optimizer.md)**，请将 NPU 固件/驱动更新至 `25.5.2`，并下载安装对应的[固件与驱动包（25.5.2）](https://www.hiascend.com/hardware/firmware-drivers/community?product=6&model=33&cann=9.0.0&driver=Ascend+HDK+25.5.2)。
+> 3. 安装步骤请参考：[社区安装指导](https://hiascend.com/document/redirect/CannCommunityInstSoftware)。
+
 
 
 ## 源码准备
@@ -56,21 +52,21 @@ DeepSeek-V4-Pro模型训练使用的配置文件为：
 ## 获取Docker镜像
 
 ```shell
-gunzip -c dsv4_train_torchtitan*.gz | docker load
+gunzip -c dsv4_train_torchtitan_cann9.0.0_v3.0.tar.gz | docker load
 ```
 
 加载后镜像版本如下：
 
 ```shell
-dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0
+dsv4_train_torchtitan:cann9.0.0_v3.0
 ```
 
 ## 启动Docker容器
 
-dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0镜像支持DeepSeek-V4-Flash模型和DeepSeek-V4-Pro模型，以该镜像的docker启动举例，执行如下命令启动容器：
+dsv4_train_torchtitan:cann9.0.0_v3.0镜像支持DeepSeek-V4-Flash模型和DeepSeek-V4-Pro模型，以该镜像的docker启动举例，执行如下命令启动容器：
 
 ```shell
-docker run -u root -itd --name dsv4_train_torchtitan_v2.0 --ulimit nproc=65535:65535 --ipc=host \
+docker run -u root -itd --name dsv4_train_torchtitan_v3.0 --ulimit nproc=65535:65535 --ipc=host \
     --device=/dev/davinci0     --device=/dev/davinci1 \
     --device=/dev/davinci2     --device=/dev/davinci3 \
     --device=/dev/davinci4     --device=/dev/davinci5 \
@@ -93,13 +89,13 @@ docker run -u root -itd --name dsv4_train_torchtitan_v2.0 --ulimit nproc=65535:6
     --net=host \
     --shm-size=128g \
     --privileged \
-    dsv4_train_torchtitan:cann9.0.0.beta.1_v2.0 /bin/bash
+    dsv4_train_torchtitan:cann9.0.0_v3.0 /bin/bash
 ```
 
 进入容器：
 
 ```shell
-docker exec -it dsv4_train_torchtitan_v2.0 /bin/bash
+docker exec -it dsv4_train_torchtitan_v3.0 /bin/bash
 ```
 
 在容器内执行环境变量初始化：
