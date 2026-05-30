@@ -182,34 +182,22 @@ TensorBoard 是机器学习领域应用最广泛的可视化工具之一，支�
    hf download DigitalLearningGmbH/MATH-lighteval --repo-type=dataset --local-dir data/math
    ```
 
-   将数据集文件存放到 `verl_npu_demo/verl/data/math` （需新建）路径下。
+   下载完成后，数据集文件位于 `verl_npu_demo/verl/data/math/` 路径下，其中原始 parquet 文件位于子目录 `data/math/data/` （即 `verl_npu_demo/verl/data/math/data/train-00000-of-00001.parquet` 与 `test-00000-of-00001.parquet`）。
 
-   数据处理前修改 `verl_npu_demo/verl/examples/data_preprocess/math_dataset.py` 中的 `datasets.load_dataset` ，将数据集从 hf 加载改为本地加载。
-
-   ```python
-   # 修改前：
-   print(f"Loading the {data_source} dataset from huggingface...", flush=True)
-   dataset = datasets.load_dataset(data_source, trust_remote_code=True)
-   
-   # 修改后：
-   print(f"Loading the {data_source} dataset from local file...", flush=True)
-   dataset = datasets.load_dataset(
-       'parquet',
-       data_files={
-           'train': '../../data/math/data/train-00000-of-00001.parquet',
-           'test': '../../data/math/data/test-00000-of-00001.parquet'
-       }
-   )
-   ```
-
-   使用数据预处理脚本 `math_dataset.py` 本地加载数据集并处理成verl所需格式。
+   verl `release/v0.6.1` 的预处理脚本 `examples/data_preprocess/math_dataset.py` 已经原生支持通过 `--local_dataset_path` 参数从本地加载原始数据集，**无需修改源码**。直接执行：
 
    ```shell
    cd examples/data_preprocess
-   python3 math_dataset.py --local_dir ../../data/math/data
+   python3 math_dataset.py \
+       --local_dir ../../data/math/data \
+       --local_dataset_path ../../data/math/data
    ```
 
-   运行数据处理脚本，获得训练所需的数据集文件 `train.parquet` 和 `test.parquet`。
+   其中：
+   - `--local_dataset_path` ：原始 parquet 数据集所在目录（包含 `train-00000-of-00001.parquet` 和 `test-00000-of-00001.parquet`）。
+   - `--local_dir` ：处理后 verl 训练所需 parquet 的输出目录。
+
+   运行完成后，会在 `verl_npu_demo/verl/data/math/data/` 下得到训练所需的 `train.parquet` 和 `test.parquet`。
 
 2. 新奖励函数介绍<a id="reward_function"></a>
 

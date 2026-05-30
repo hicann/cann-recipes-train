@@ -18,7 +18,6 @@
 
 export ASCEND_HOME_PATH=/usr/local/Ascend/ascend-toolkit
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
-source /usr/local/Ascend/nnal/asdsip/set_env.sh
 source /usr/local/Ascend/nnal/atb/set_env.sh
 
 export HYDRA_FULL_ERROR=1                   # display the accurate error stack
@@ -37,7 +36,8 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 set -x
 
-export VLLM_ATTENTION_BACKEND=FLASH_ATTN
+export VLLM_ASCEND_ENABLE_NZ=0
+export VLLM_USE_V1=1
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -77,7 +77,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.experiment_name='qwen2_5_1_5b_math' \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=5 \
-    trainer.total_epochs=10 \
+    trainer.save_freq=28 \
+    trainer.test_freq=10 \
+    trainer.total_epochs=5 \
     trainer.device=npu 2>&1 | tee ./run_log/qwen2_5_1_5b_math.log

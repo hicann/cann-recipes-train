@@ -6,45 +6,71 @@
 
 ## 支持的产品型号
 
-<term>Atlas A2系列产品</term>
+<term>Atlas A2/A3系列产品</term>
 
 ## 环境准备
 
 1. 使用 Docker 构建环境。
 
-   ```shell
-   # 获取Docker镜像
-   docker pull quay.io/ascend/vllm-ascend:v0.9.1
+   1.1 根据使用产品型号获取对应的Docker镜像
 
-   # 构建Docker容器
+   ```shell
+   # A3
+   docker pull quay.io/ascend/cann:8.5.0-a3-openeuler24.03-py3.11
+
+   # A2
+   docker pull quay.io/ascend/cann:8.5.0-910b-openeuler24.03-py3.11
+   ```
+
+   1.2 创建并启动容器
+
+   ```shell
+   # A3
    docker run \
-   --name ${YOUR_CONTAINER_NAME} \
-   --device=/dev/davinci0 \
-   --device=/dev/davinci1 \
-   --device=/dev/davinci2 \
-   --device=/dev/davinci3 \
-   --device=/dev/davinci4 \
-   --device=/dev/davinci5 \
-   --device=/dev/davinci6 \
-   --device=/dev/davinci7 \
-   --device /dev/davinci_manager \
-   --device /dev/devmm_svm \
-   --device /dev/hisi_hdc \
+   --device=/dev/davinci0 --device=/dev/davinci1 --device=/dev/davinci2 --device=/dev/davinci3 --device=/dev/davinci4 --device=/dev/davinci5 --device=/dev/davinci6 --device=/dev/davinci7 --device=/dev/davinci8 --device=/dev/davinci9 --device=/dev/davinci10 --device=/dev/davinci11 --device=/dev/davinci12 --device=/dev/davinci13 --device=/dev/davinci14 --device=/dev/davinci15 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc \
+   -v /etc/localtime:/etc/localtime \
    -v /usr/local/dcmi:/usr/local/dcmi \
+   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+   -v /usr/local/Ascend/firmware:/usr/local/Ascend/firmware \
+   -v /var/log/npu/:/usr/slog \
    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
-   -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
-   -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+   -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
    -v /etc/ascend_install.info:/etc/ascend_install.info \
-   -v /root/.cache:/root/.cache \
    -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \
    -w ${HOST_WORKSPACE} \
+   --name ${YOUR_CONTAINER_NAME} \
    --shm-size=100g \
    --privileged=true \
+   --net=host \
    -itd \
-   quay.io/ascend/vllm-ascend:v0.9.1 \
+   quay.io/ascend/cann:8.5.0-a3-openeuler24.03-py3.11 \
    /bin/bash
 
-   # 进入容器
+   # A2
+   docker run \
+   --device=/dev/davinci0 --device=/dev/davinci1 --device=/dev/davinci2 --device=/dev/davinci3 --device=/dev/davinci4 --device=/dev/davinci5 --device=/dev/davinci6 --device=/dev/davinci7 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc \
+   -v /etc/localtime:/etc/localtime \
+   -v /usr/local/dcmi:/usr/local/dcmi \
+   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+   -v /usr/local/Ascend/firmware:/usr/local/Ascend/firmware \
+   -v /var/log/npu/:/usr/slog \
+   -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+   -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+   -v /etc/ascend_install.info:/etc/ascend_install.info \
+   -v ${HOST_WORKSPACE}:${HOST_WORKSPACE} \
+   -w ${HOST_WORKSPACE} \
+   --name ${YOUR_CONTAINER_NAME} \
+   --shm-size=100g \
+   --privileged=true \
+   --net=host \
+   -itd \
+   quay.io/ascend/cann:8.5.0-910b-openeuler24.03-py3.11 \
+   /bin/bash
+   ```
+
+   1.3 进入容器
+
+   ```shell
    docker exec -it ${YOUR_CONTAINER_NAME} bash
    ```
 
@@ -53,15 +79,15 @@
    - `-v ${HOST_WORKSPACE}:${HOST_WORKSPACE}`为挂载业务目录
    - `-w ${HOST_WORKSPACE}`为设置工作目录，进入后直接操作
 
-2. 安装 CANN 软件包。
+2. 安装 vllm 和 vllm-ascend。
 
-   本样例依赖的 CANN 软件版本为 `CANN：8.2.RC1` ，请从[软件包下载地址](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.2.RC1)下载如下软件包，并参考[ CANN 安装文档](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1/softwareinst/instg/instg_0000.html?Mode=PmIns&InstallType=local&OS=Debian&Software=cannToolKit)进行安装。
+   ```shell
+   # 安装vllm
+   pip install -v vllm==0.11.0
 
-   - 开发套件包：`Ascend-cann-toolkit_${version}_linux-${arch}.run`
-   - 二进制算子包：`Ascend-cann-kernels-${chip_type}_${version}_linux-${arch}.run`
-   - NNAL加速包：`Ascend-cann-nnal_${version}_linux-${arch}.run`
-
-   软件包文件名中 `${version}` 表示CANN包版本号，`${arch}` 表示CPU架构（如aarch64、x86_64）。
+   # 安装vllm-ascend
+   pip install -v vllm-ascend==0.11.0
+   ```
 
 3. 下载项目源码并安装依赖的 python 库。
 
@@ -80,44 +106,60 @@
    # verl源码请下载到qwen2_5/verl_npu_demo/目录下
    git clone https://github.com/volcengine/verl.git
    cd verl
-   git checkout 634bd935
-   pip install -r requirements-npu.txt
+   git checkout release/v0.6.1
    pip install -e .
    ```
 
+   完成后当前目录为 `verl_npu_demo/verl`。
+
 ## 权重准备
 
-1. 权重下载
+1. 权重下载（优先推荐 ModelScope）
+
+   1.1 ModelScope 命令行下载（推荐）
 
    ```shell
-   # 获取模型权重文件
+   # 在 verl_npu_demo/verl 目录下执行
+   modelscope download --model Qwen/Qwen2.5-1.5B-Instruct --local_dir model/Qwen2_5_1_5B_Instruct/
+   ```
+
+   1.2 Hugging Face 下载（备用）
+
+   ```shell
+   # 在 verl_npu_demo/verl 目录下执行
    hf download Qwen/Qwen2.5-1.5B-Instruct --local-dir model/Qwen2_5_1_5B_Instruct/
    ```
 
-   模型权重文件会存放到 `verl_npu_demo/verl/model/Qwen2_5_1_5B_Instruct` 路径下。
-
-   如果 hf CLI 出现网络问题可配置代理或使用 hf 镜像站，不同操作系统和 Shell 中临时修改为 hf 镜像站的方法如下（仅当前会话有效）：
+   若 hf CLI 出现网络问题，可配置代理或使用镜像站：
 
    ```shell
-   # Linux (Bash)
    export HF_ENDPOINT=https://hf-mirror.com
-   
-   # Windows PowerShell
-   $env:HF_ENDPOINT = "https://hf-mirror.com"
    ```
 
-   > 说明：若您的网络无法连通 huggingface ，请从[权重文件下载地址](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct)手动下载。
+   > 说明：
+   > - 模型权重文件最终存放路径：`verl_npu_demo/verl/model/Qwen2_5_1_5B_Instruct`
+   > - 若命令行下载失败，可手动下载：
+   >   - ModelScope 手动下载地址：[Qwen2.5-1.5B-Instruct](https://www.modelscope.cn/models/Qwen/Qwen2.5-1.5B-Instruct)
+   >   - Hugging Face 手动下载地址：[Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct)
 
 2. 替换 Tokenizer 配置文件
 
    将本样例优化的 Tokenizer 配置文件 `tokenizer_config.json` 从 `verl_npu_demo` 移动到 `verl_npu_demo/verl/model/Qwen2_5_1_5B_Instruct` 目录下，进行覆盖替换操作。
+
+   ```shell
+   # 从 verl_npu_demo/verl 返回 verl_npu_demo
+   cd ..
+   mv -f tokenizer_config.json verl/model/Qwen2_5_1_5B_Instruct/
+   ```
 
 ## 数据集准备
 
 执行如下命令，使用数据预处理脚本 `verl_npu_demo/verl/examples/data_preprocess/math_dataset.py` 在线获取 MATH-lighteval 数据集并处理成 verl 所需格式。
 
   ```shell
-  cd examples/data_preprocess
+  # 在 verl_npu_demo 目录下执行
+  cd verl/examples/data_preprocess
+  # 若网络无法连通 huggingface，先执行：export HF_ENDPOINT=https://hf-mirror.com
   python3 math_dataset.py --local_dir ../../data/math/data
   ```
 
@@ -131,18 +173,30 @@
 
    将训练脚本 `run_qwen2_5_1_5b.sh` 从 `verl_npu_demo` 移动到 `verl_npu_demo/verl` 目录下。
 
+   ```shell
+   # 从 verl/examples/data_preprocess 返回 verl_npu_demo
+   cd ../../..
+   mv -f run_qwen2_5_1_5b.sh verl/
+   ```
+
 2. 修改奖励函数。
 
    将本样例优化后的奖励函数 `new_math_reward.py` 从 `verl_npu_demo` 移动到 `verl_npu_demo/verl/verl/utils/reward_score` 目录下。
+
+   ```shell
+   # 在 verl_npu_demo 目录下执行
+   mv -f new_math_reward.py verl/verl/utils/reward_score/
+   ```
 
    > 关于本样例奖励函数设计点可参见附录中的[新奖励函数介绍](#reward_function)。
 
 3. 执行训练脚本。
 
    ```shell
-   # 返回verl_npu_demo/verl目录，创建训练日志目录
+   # 进入 verl_npu_demo/verl 目录，创建训练日志目录
+   cd verl
    mkdir run_log
-   
+
    # 执行训练脚本
    bash run_qwen2_5_1_5b.sh
    ```
@@ -153,16 +207,16 @@
 
 如果是多卡训练，训练完成后则需要合并模型权重。
 
-以训练任务中第 20 步保存 checkpoint 为例，合并方法如下：
+以训练任务中第 140 步保存的 checkpoint 为例（默认 `save_freq=28`、`total_epochs=5` 时，存档点依次为 28/56/84/112/140，可按实际训练情况替换），合并方法如下：
 
 ```shell
 python3 -m verl.model_merger merge \
     --backend fsdp \
-    --local_dir checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_20/actor \
-    --target_dir checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_20/actor/huggingface
+    --local_dir checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_140/actor \
+    --target_dir checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_140/actor/huggingface
 ```
 
-合并完成后，第 20 步 checkpoint 完整模型权重文件的存储在 `verl_npu_demo/verl/checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_20/actor/huggingface` 中，可用于后续模型效果验证和推理。
+合并完成后，第 140 步 checkpoint 完整模型权重文件的存储在 `verl_npu_demo/verl/checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_140/actor/huggingface` 中，可用于后续模型效果验证和推理。
 
 ## 模型效果验证
 
@@ -173,40 +227,43 @@ python3 -m verl.model_merger merge \
 1. 下载 OpenCompass 。
 
    ```shell
-   # 返回qwen2_5/verl_npu_demo目录，git获取源码
+   # 从 verl_npu_demo/verl 返回 verl_npu_demo 目录，git获取源码
+   cd ..
    git clone https://github.com/open-compass/opencompass.git
 
    cd opencompass
-   # 安装相关依赖，如果遇到pyext的报错，请注释掉verl_npu_demo/opencompass/requirements/runtime.txt中pyext这一行
+   git checkout 0.5.2
    pip install -r requirements.txt
    ```
 
 2. 准备 MATH-lighteval 测试数据集。
 
-   - 下载数据集（如已下载请忽略）
+   2.1 下载数据集（如已下载请忽略）
 
-      ```shell
-      # 在verl_npu_demo/verl目录中下载
-      hf download DigitalLearningGmbH/MATH-lighteval --repo-type=dataset --local-dir data/math
-      ```
+   ```shell
+   # 从 verl_npu_demo/opencompass 切回 verl_npu_demo/verl 下载
+   cd ../verl
+   hf download DigitalLearningGmbH/MATH-lighteval --repo-type=dataset --local-dir data/math
+   ```
 
-      将数据集文件存放到 `verl_npu_demo/verl/data/math` （需新建）路径下。
+   下载完成后数据集文件位于 `verl_npu_demo/verl/data/math` 路径下。
 
-   - 转换数据集
+   2.2 转换数据集
 
-      使用格式转换脚本 `verl_npu_demo/parquet2json.py` 将hf上下载的测试集数据 `test-00000-of-00001.parquet` 转换为 OpenCompass 测试所需的 `json` 格式。
+   使用格式转换脚本 `verl_npu_demo/parquet2json.py` 将hf上下载的测试集数据 `test-00000-of-00001.parquet` 转换为 OpenCompass 测试所需的 `json` 格式。
 
-      ```shell
-      # 在verl_npu_demo/opencompass目录中新建数据存放目录
-      mkdir -p data/math
+   ```shell
+   # 从 verl_npu_demo/verl 返回 verl_npu_demo/opencompass 新建数据存放目录
+   cd ../opencompass
+   mkdir -p data/math
 
-      # 执行数据集转换命令
-      python3 ../parquet2json.py \
-          --input "../verl/data/math/data/test-00000-of-00001.parquet" \
-          --output "data/math/math.json"
-      ```
+   # 执行数据集转换命令（在 verl_npu_demo/opencompass 目录下）
+   python3 ../parquet2json.py \
+         --input "../verl/data/math/data/test-00000-of-00001.parquet" \
+         --output "data/math/math.json"
+   ```
 
-      > **注意**：该测试数据集需命名为 `math.json`
+   > **注意**：该测试数据集需命名为 `math.json`
 
 3. 配置测试脚本
 
@@ -230,7 +287,7 @@ python3 -m verl.model_merger merge \
    参数说明：
 
    - `abbr` ：测试结果中用于区分不同测试的代号，可自定义。
-   - `path` ：测试模型存放的绝对路径，示例： `/home/cann-recipes-train/llm_rl/qwen2_5/verl_npu_demo/verl/checkpoints/../../global_step_<训练步数>/actor/huggingface` 。
+   - `path` ：测试模型存放的绝对路径，示例： `/home/cann-recipes-train/llm_rl/qwen2_5/verl_npu_demo/verl/checkpoints/verl_grpo_example_math/qwen2_5_1_5b_math/global_step_<训练步数>/actor/huggingface` 。
    - `max_out_len` ：测试过程中模型生成的最大长度。
    - `batch_size` ：测试过程中模型生成时的批量处理大小。
 
@@ -246,7 +303,7 @@ python3 -m verl.model_merger merge \
    python3 run.py \
        --models hf_qwen2_5_1_5b_instruct \
        --datasets math_gen_a58d9d \
-       --max-num-worker 4  # 4张卡测试，单卡测试该参数省略
+       --max-num-workers 4  # 4张卡测试，单卡测试该参数省略
    ```
 
    本样例测试结果如下：
@@ -254,9 +311,9 @@ python3 -m verl.model_merger merge \
    |            model             | step |    dataset     | version |  metric  | mode | qwen2.5-1.5b-instruct-hf |
    | :--------------------------: | :--: | :------------: | :-----: | :------: | :--: | :----------------------: |
    |    qwen2.5-1.5b-instruct     |  0   | MATH-lighteval | a58d9d  | accuracy | gen  |        **43.48**         |
-   | qwen2.5-1.5b-instruct-rl-280 | 280  | MATH-lighteval | a58d9d  | accuracy | gen  |        **55.06**         |
+   | qwen2.5-1.5b-instruct-rl-140 | 140  | MATH-lighteval | a58d9d  | accuracy | gen  |        **53.26**         |
 
-   可以看到，经过强化学习，**Qwen2.5 1.5B-instruct** 模型在 **MATH** 数据集上得到 **26.6%** 的性能提升。
+   可以看到，经过强化学习，**Qwen2.5 1.5B-instruct** 模型在 **MATH** 数据集上得到 **22.5%** 的性能提升。
 
 ## 训练过程可视化
 
@@ -270,10 +327,10 @@ SwanLab 是一款轻量级实验管理与可视化工具，主打简洁的界面
 
    首先修改训练启动脚本 `run_qwen2_5_1_5b.sh` ，将日志输出方式从 TensorBoard 切换为 SwanLab ：
 
-   找到 `trainer.logger=['console','tensorboard'] \` 一行，修改为：
+   找到 `trainer.logger='["console","tensorboard"]' \` 一行，修改为：
 
    ```shell
-   trainer.logger=['console','swanlab'] \
+   trainer.logger='["console","swanlab"]' \
    ```
 
    然后在训练环境中配置 SwanLab 日志存储路径和运行模式，通过环境变量指定：
@@ -370,9 +427,9 @@ TensorBoard 是机器学习领域应用最广泛的可视化工具之一，支�
       - **是什么**：在验证集上，奖励模型给生成答案的平均打分。
       - **怎么看**：这是训练追求的**直接目标**，希望它越高越好。但必须保持怀疑，需要与真实准确率对照，防止“奖励黑客”。
 
-   - **`critic/score/mean` (评论家评分)**：
-      - **是什么**：在 GRPO 中，这通常代表**基于分组相对比较计算出的优势函数 (Advantage) 估计值**，或者是从奖励模型中推导出的价值评估。它不是由一个独立的 Critic 模型产生的，而是通过**同一批次内不同 response 之间的相对比较**计算得出的。
-      - **怎么看**：它应该与 `val-core` 的奖励值大致在同一量级。如果两者差异巨大，说明 Critic 没训练好。
+   - **`critic/score/mean` (训练奖励均值)**：
+      - **是什么**：在 GRPO 中并没有独立的 Critic 模型，此处的 `score` 指的是**奖励函数（本样例为 `new_math_reward.py`）对训练 batch 内 response 打出的原始 reward 在 batch 内的均值**，而非优势函数（Advantage）。Advantage 是后续基于分组相对比较再归一化得到的，对应 `critic/advantages/*` 这类 key。
+      - **怎么看**：它代表训练阶段模型当前生成被奖励函数评分的好坏，应随训练逐步上升；与验证集上的 `val-core/.../reward/mean@1` 趋势一致，但量级会受 batch 难度分布影响，两者不必完全相等。
 
    <img src="./figures/qwen2_5/image-20250926113107179.png" alt="image-20250926113107179" style="zoom:67%;" /><img src="./figures/qwen2_5/image-20250926113142229.png" alt="image-20250926113142229" style="zoom:67%;" />
 
@@ -394,7 +451,7 @@ TensorBoard 是机器学习领域应用最广泛的可视化工具之一，支�
 
    <img src="./figures/qwen2_5/image-20250926113233539.png" alt="image-20250926113233539" style="zoom:67%;" /><img src="./figures/qwen2_5/image-20250926113325538.png" alt="image-20250926113325538" style="zoom:67%;" /><img src="./figures/qwen2_5/image-20250926113353738.png" alt="image-20250926113353738" style="zoom:67%;" />
 
-3. 训练效率指标
+4. 训练效率指标
 
    - `perf/mfu/actor` (模型浮点利用率)：
       - **是什么**：衡量硬件计算能力被利用的效率百分比。
@@ -419,34 +476,22 @@ TensorBoard 是机器学习领域应用最广泛的可视化工具之一，支�
    hf download DigitalLearningGmbH/MATH-lighteval --repo-type=dataset --local-dir data/math
    ```
 
-   将数据集文件存放到 `verl_npu_demo/verl/data/math` （需新建）路径下。
+   下载完成后，数据集文件位于 `verl_npu_demo/verl/data/math/` 路径下，其中原始 parquet 文件位于子目录 `data/math/data/` （即 `verl_npu_demo/verl/data/math/data/train-00000-of-00001.parquet` 与 `test-00000-of-00001.parquet`）。
 
-   数据处理前修改 `verl_npu_demo/verl/examples/data_preprocess/math_dataset.py` 中的 `datasets.load_dataset` ，将数据集从 hf 加载改为本地加载。
-
-   ```python
-   # 修改前：
-   print(f"Loading the {data_source} dataset from huggingface...", flush=True)
-   dataset = datasets.load_dataset(data_source, trust_remote_code=True)
-   
-   # 修改后：
-   print(f"Loading the {data_source} dataset from local file...", flush=True)
-   dataset = datasets.load_dataset(
-       'parquet',
-       data_files={
-           'train': '../../data/math/data/train-00000-of-00001.parquet',
-           'test': '../../data/math/data/test-00000-of-00001.parquet'
-       }
-   )
-   ```
-
-   使用数据预处理脚本 `math_dataset.py` 本地加载数据集并处理成verl所需格式。
+   verl `release/v0.6.1` 的预处理脚本 `examples/data_preprocess/math_dataset.py` 已经原生支持通过 `--local_dataset_path` 参数从本地加载原始数据集，**无需修改源码**。直接执行：
 
    ```shell
    cd examples/data_preprocess
-   python3 math_dataset.py --local_dir ../../data/math/data
+   python3 math_dataset.py \
+       --local_dir ../../data/math/data \
+       --local_dataset_path ../../data/math/data
    ```
 
-   运行数据处理脚本，获得训练所需的数据集文件 `train.parquet` 和 `test.parquet`。
+   其中：
+   - `--local_dataset_path` ：原始 parquet 数据集所在目录（包含 `train-00000-of-00001.parquet` 和 `test-00000-of-00001.parquet`）。
+   - `--local_dir` ：处理后 verl 训练所需 parquet 的输出目录。
+
+   运行完成后，会在 `verl_npu_demo/verl/data/math/data/` 下得到训练所需的 `train.parquet` 和 `test.parquet`。
 
 2. 新奖励函数介绍<a id="reward_function"></a>
 
