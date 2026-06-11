@@ -37,6 +37,15 @@ git clone -b v0.2.2-dev https://gitcode.com/cann/torchtitan-npu.git
 cd torchtitan-npu
 ```
 
+下载 cann-recipes 仓对应的脚本, 拷贝至 torchtitan-npu 的 scripts 目录
+```
+cd ../
+git clone https://gitcode.com/cann/cann-recipes-train.git
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_flash_pretrain.sh ./torchtitan-npu/scripts
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_flash_perf.sh ./torchtitan-npu/scripts
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_pro_pretrain.sh ./torchtitan-npu/scripts
+```
+
 DeepSeek-V4-Flash模型训练使用的配置文件为：
 
 ```shell
@@ -214,16 +223,24 @@ initial_load_path = "/data/models/DeepSeek-V4-Pro-bf16"
 
 * 根据使用实际的网卡、节点 IP等，修改多机训练脚本配置，参考 `torchtitan-npu` [快速上手](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md) 文档中的“[多机训练任务](https://gitcode.com/cann/torchtitan-npu/blob/v0.2.2-dev/docs/user-guides/quickstart.md#多机训练任务)”一节。
 
+
 * 进入各节点上的 `torchtitan-npu` 源码目录后，在所有参与训练的节点上同时执行如下命令，即可启动 `DeepSeek-V4-Flash` 多机CPT训练任务：
 
 ```shell
 CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die.toml \
-bash scripts/run_train_multinodes.sh
+bash scripts/run_train_multinodes_dsv4_flash_pretrain.sh
+```
+
+* 进入各节点上的 `torchtitan-npu` 源码目录后，在所有参与训练的节点上同时执行如下命令，即可启动 `DeepSeek-V4-Flash` 多机最优性能任务：
+
+```shell
+CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_285b_43layers_4k_128die_perf.toml \
+bash scripts/run_train_multinodes_dsv4_flash_perf.sh
 ```
 
 * 进入各节点上的 `torchtitan-npu` 源码目录后，在所有参与训练的节点上同时执行如下命令，即可启动 `DeepSeek-V4-Pro` 多机CPT训练任务：
 
 ```shell
 CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_pro_61layers_4k_384die.toml \
-bash scripts/run_train_multinodes.sh
+bash scripts/run_train_multinodes_dsv4_pro_pretrain.sh
 ```
