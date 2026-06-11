@@ -280,7 +280,7 @@ SAM（suffix automaton，后缀自动机）是一个能够高效解决许多字�
 
 * 训练 batch 大小（`train_batch_size`）：512
 
-* 生成 batch 大小（`gen_btach_size`）：1536
+* 生成 batch 大小（`gen_batch_size`）：1536
 
 * Rollout 最大请求数（`max_num_seqs`）：256
 
