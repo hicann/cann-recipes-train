@@ -29,13 +29,21 @@
 
 ## 源码准备
 
-执行如下命令拉取源码：
+如果是A3环境执行如下命令拉取源码：
 
 ```shell
 mkdir -p /home/code && cd /home/code/
 git clone -b v0.2.2-dev https://gitcode.com/cann/torchtitan-npu.git
 cd torchtitan-npu
 ```
+如果是A5环境执行如下命令拉取源码：
+
+```shell
+mkdir -p /home/code && cd /home/code/
+git clone -b master https://gitcode.com/cann/torchtitan-npu.git
+cd torchtitan-npu
+```
+
 
 下载 cann-recipes 仓对应的脚本, 拷贝至 torchtitan-npu 的 scripts 目录
 ```
@@ -44,6 +52,9 @@ git clone https://gitcode.com/cann/cann-recipes-train.git
 cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_flash_pretrain.sh ./torchtitan-npu/scripts
 cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_flash_perf.sh ./torchtitan-npu/scripts
 cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_multinodes_dsv4_pro_pretrain.sh ./torchtitan-npu/scripts
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_dsv4_flash_A5_BF16_pretrain.sh ./torchtitan-npu/scripts
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_dsv4_flash_A5_MXFP8_pretrain.sh ./torchtitan-npu/scripts
+
 ```
 
 DeepSeek-V4-Flash模型训练使用的配置文件为：
@@ -243,4 +254,14 @@ bash scripts/run_train_multinodes_dsv4_flash_perf.sh
 ```shell
 CONFIG_FILE=./torchtitan_npu/models/deepseek_v4/train_configs/deepseek_v4_pro_61layers_4k_384die.toml \
 bash scripts/run_train_multinodes_dsv4_pro_pretrain.sh
+```
+
+* 进入 `torchtitan-npu` 源码目录后，在昇腾950PR/DT系列A5上参与训练的单机节点上执行如下命令，即可分别启动 `DeepSeek-V4-Flash` 单机裁剪模型的BF16/MXFP8的CPT训练任务：
+
+```shell
+bash run_train_dsv4_flash_A5_BF16_pretrain.sh
+```
+
+```shell
+bash run_train_dsv4_flash_A5_MXFP8_pretrain.sh
 ```
