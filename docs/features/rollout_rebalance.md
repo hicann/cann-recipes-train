@@ -288,7 +288,7 @@ vllm_ascend上在`torchair_graph_config`中提供了`use_cached_graph`和`graph_
                 layer_caches[i][new_block_ids] = cache_block[layer_index][reload_indexes]
 ```
 
-# 4. 使能效果
+## 4. 使能效果
 我们在Atlas A3集群64卡环境上进行了如下实验，发现本方案开启后单轮推理耗时从10200s左右优化到约6100s，性能收益达60%左右。
 
 实验配置如下：

@@ -2,7 +2,7 @@
 
 ## 概述
 
-本样例针对DeepSeek-V3 裁剪模型，基于[MindSpeed 框架](https://gitcode.com/Ascend/MindSpeed)，在 8 卡 Atlas A5 上完成8K序列MXFP8/HiF8 低精度预训练优。MXFP8/HiF8 低精度预训练介绍可参见[HiF8精度与性能双优：面向大模型训练的低精度优化实践](../../docs/llm_pretrain/deepseek-v3_pre_train_hifp8_mxfp8.md)。
+本样例针对DeepSeek-V3 裁剪模型，基于[MindSpeed 框架](https://gitcode.com/Ascend/MindSpeed)，在 8 卡 Atlas A5 上完成8K序列MXFP8/HiF8 低精度预训练。MXFP8/HiF8 低精度预训练介绍可参见[HiF8精度与性能双优：面向大模型训练的低精度优化实践](../../docs/llm_pretrain/deepseek-v3_pre_train_hifp8_mxfp8.md)。
 
 ## 硬件要求
 产品型号：Atlas A5 950DT 系列
@@ -81,7 +81,7 @@ git clone https://huggingface.co/datasets/lsb/enwiki20230101/tree/main/data
 cd ../..
 ```
 
-数据集转换示例，可以参考修脚本[data_convert_deepseek3_pretrain.sh](https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/deepseek3/data_convert_deepseek3_pretrain.sh)修改原始数据集路径，模型配置文件路径和目标输出路径
+数据集转换示例，可以参考修改脚本[data_convert_deepseek3_pretrain.sh](https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/deepseek3/data_convert_deepseek3_pretrain.sh)修改原始数据集路径，模型配置文件路径和目标输出路径
 ```bash
 cd ./MindSpeed-LLM
 bash examples/mcore/deepseek3/data_convert_deepseek3_pretrain.sh
@@ -98,7 +98,7 @@ pip install modelscope
 # 下载DeepSeek-V3完整模型文件 （但是不包括权重，当前是裁剪模型可以不下载权重）
 modelscope download --model deepseek-ai/DeepSeek-V3 --local_dir /data/models/DeepSeek-V3
 ```
-权重转换拉起示例，可以参考[MindSpeed-LLM中转换脚本](https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/deepseek3/ckpt_convert_deepseek3_hf2mcore.sh)修改原始权重路径，以及保持的路径以及对应的切分裁剪策略
+权重转换拉起示例，可以参考[MindSpeed-LLM中转换脚本](https://gitcode.com/Ascend/MindSpeed-LLM/blob/master/examples/mcore/deepseek3/ckpt_convert_deepseek3_hf2mcore.sh)修改原始权重路径，以及保存的路径和对应的切分裁剪策略
 ```shell
 # 转换为mcore权重
 bash examples/mcore/deepseek3/ckpt_convert_deepseek3_hf2mcore.sh

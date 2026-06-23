@@ -71,7 +71,7 @@ SAM 无损投机推理能力的核心组件，实现了上文提到的动态 SAM
 
 代码：[model_runner_v1.py](../../llm_rl/qwen3/patches/vllm_ascend/0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch) 
 
-# 4. 使能效果
+## 4. 使能效果
 我们在 Qwen3-32B Dense 模型上，于真实的 RL 后训练场景（DAPO，数学推理数据集上）进行了全面的端到端验证。
 相关配置：
 

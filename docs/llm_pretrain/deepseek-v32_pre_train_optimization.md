@@ -545,6 +545,6 @@ TP 通过 AllGather 和 ReduceScatter 在层内完成跨卡同步，通信延迟
 <img src="./figures/deepseek_v32/e8957bac-aebe-4cf0-b603-8cfc691de0e9.png" width="35%" >
 </p>
 
-在 TorchTitan-npu 中，Inductor 编译器在 FX 计算图的阶段，可以识别这种**all_gather + mutmal**或者 **matmul + reduce-scatter**这种pattern，并自动完成这一分解与重排序，无需修改模型代码。配合 A3 节点内的高带宽卡间互联，层内 TP 通信可被有效压缩并隐藏在计算窗口之中。
+在 TorchTitan-npu 中，Inductor 编译器在 FX 计算图的阶段，可以识别这种**all_gather + matmul**或者 **matmul + reduce-scatter**这种pattern，并自动完成这一分解与重排序，无需修改模型代码。配合 A3 节点内的高带宽卡间互联，层内 TP 通信可被有效压缩并隐藏在计算窗口之中。
 
 
