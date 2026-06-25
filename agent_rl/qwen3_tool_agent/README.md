@@ -218,7 +218,7 @@ Atlas A3系列产品。
     
     <img src="README.assets/image-20251127110452948.png" alt="image-20251127110452948" style="zoom:80%;" />
 
-    训练曲线查看方法见[附录 TensorBorard使用方法](#TensorBoard)。
+    训练曲线查看方法见[附录 TensorBoard使用方法](#TensorBoard)。
 
 ### 附录
 
