@@ -1629,7 +1629,7 @@ Official Repository: https://github.com/volcengine/verl
 Usage:"
 agent_rl\qwen3_tool_agent\run_qwen3_4b_dapo_npu.sh
 agent_rl\qwen3_tool_agent\run_qwen3_4b_sft_npu.sh
-llm_rl\qwen3\patches\verl\utils\hybrid_data_parallel\hdp.py"
+llm_rl\qwen3\verl-mindspeed\patches\verl\utils\hybrid_data_parallel\hdp.py"
 Copyright Notice(s):
 Copyright 2024 Bytedance Ltd.
 Copyright 2025 CollabLLM team

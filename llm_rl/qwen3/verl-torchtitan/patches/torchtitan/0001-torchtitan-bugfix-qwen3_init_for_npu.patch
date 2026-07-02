@@ -1,0 +1,24 @@
+diff --git a/llm_rl/qwen3/verl-torchtitan/torchtitan/models/qwen3/__init__.py b/llm_rl/qwen3/verl-torchtitan/torchtitan/models/qwen3/__init__.py
+index 63e5a7269..f637b7c2e 100644
+--- a/llm_rl/qwen3/verl-torchtitan/torchtitan/models/qwen3/__init__.py
++++ b/llm_rl/qwen3/verl-torchtitan/torchtitan/models/qwen3/__init__.py
+@@ -55,7 +55,8 @@ _EPS = 1e-6
+ def _output_linear_init(dim: int) -> dict[str, Callable]:
+     s = dim**-0.5
+     return {
+-        "weight": partial(nn.init.trunc_normal_, std=s, a=-3 * s, b=3 * s),
++        # NPU init path is incompatible with bounded trunc_normal_ parameters.
++        "weight": partial(nn.init.trunc_normal_, std=s), #, a=-3 * s, b=3 * s),
+         "bias": nn.init.zeros_,
+     }
+
+@@ -638,7 +639,8 @@ def _235b_a22b() -> Qwen3Model.Config:
+ qwen3_configs = {
+     "debugmodel": _debugmodel,
+     "debugmodel_flex": _debugmodel_flex,
+-    "debugmodel_flex_flash": _debugmodel_flex_flash,
++    # flex_flash debug flavor depends on a flash path that is not enabled for NPU.
++    # "debugmodel_flex_flash": _debugmodel_flex_flash,
+     "debugmodel_varlen": _debugmodel_varlen,
+     "0.6B": _0_6b,
+     "0.6B_varlen": _0_6b_varlen,

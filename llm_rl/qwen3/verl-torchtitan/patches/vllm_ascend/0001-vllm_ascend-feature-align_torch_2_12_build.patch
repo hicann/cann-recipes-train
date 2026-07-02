@@ -1,0 +1,54 @@
+diff --git a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/CMakeLists.txt b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/CMakeLists.txt
+index 9e3564e3..879318c4 100644
+--- a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/CMakeLists.txt
++++ b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/CMakeLists.txt
+@@ -22,9 +22,9 @@ find_package(Torch REQUIRED)
+
+ run_python(TORCH_VERSION
+   "import torch; print(torch.__version__)" "Failed to locate torch path")
+-# check torch version is 2.9.0
+-if(NOT ${TORCH_VERSION} VERSION_EQUAL "2.9.0")
+-  message(FATAL_ERROR "Expected PyTorch version 2.9.0, but found ${TORCH_VERSION}")
++# check torch version is 2.12.0
++if(NOT ${TORCH_VERSION} VERSION_EQUAL "2.12.0")
++  message(FATAL_ERROR "Expected PyTorch version 2.12.0, but found ${TORCH_VERSION}")
+ endif()
+
+ set(RUN_MODE "npu" CACHE STRING "cpu/sim/npu")
+diff --git a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/pyproject.toml b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/pyproject.toml
+index 061db046..e91a4bac 100644
+--- a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/pyproject.toml
++++ b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/pyproject.toml
+@@ -18,8 +18,8 @@ requires = [
+     "setuptools>=64",
+     "setuptools-scm>=8",
+     "transformers>=4.57.4",
+-    "torch-npu==2.9.0",
+-    "torch==2.9.0",
++    "torch-npu==2.12.0rc1",
++    "torch==2.12.0",
+     "torchvision",
+     "wheel",
+     "msgpack",
+diff --git a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/requirements.txt b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/requirements.txt
+index b307c62e..90eb9295 100644
+--- a/llm_rl/qwen3/verl-torchtitan/vllm-ascend/requirements.txt
++++ b/llm_rl/qwen3/verl-torchtitan/vllm-ascend/requirements.txt
+@@ -12,7 +12,7 @@ pandas
+ psutil
+ setuptools>=64
+ setuptools-scm>=8
+-torch==2.9.0
++torch==2.12.0
+ torchvision
+ torchaudio
+ wheel
+@@ -31,7 +31,7 @@ numba
+ # Install torch_npu
+ #--pre
+ #--extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+-torch-npu==2.9.0
++torch-npu==2.12.0rc1
+
+ arctic-inference==0.1.1
+ transformers>=4.57.4

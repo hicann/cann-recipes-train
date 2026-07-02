@@ -179,7 +179,7 @@ SAM（suffix automaton，后缀自动机）是一个能够高效解决许多字�
 
 ### 3.1 性能优化
 
-投机解码的性能取决于两个因素：第一是接受率，第二是投机算法本身带来的额外耗时（draft token 的生成和验证、拒绝采样）。为了能够最大化 SAM 无损投机在RL训练中的收益，我们需要尽可能地提高接受率，并减少额外耗时。为此，我们做了如下两大优化——关于 batch size 的自适应开关以及拒绝采样加速，相关代码已在[cann\-recipes\-train](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/qwen3) 全部开源。
+投机解码的性能取决于两个因素：第一是接受率，第二是投机算法本身带来的额外耗时（draft token 的生成和验证、拒绝采样）。为了能够最大化 SAM 无损投机在RL训练中的收益，我们需要尽可能地提高接受率，并减少额外耗时。为此，我们做了如下两大优化——关于 batch size 的自适应开关以及拒绝采样加速，相关代码已在[cann\-recipes\-train](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/qwen3/verl-mindspeed) 全部开源。
 
 #### 3.1.1 自适应开关
 
@@ -203,7 +203,7 @@ SAM（suffix automaton，后缀自动机）是一个能够高效解决许多字�
 
 以`sample_recovered_tokens_pytorch`为例，[原生实现](https://github.com/vllm-project/vllm-ascend/blob/v0.11.0rc0/vllm_ascend/sample/rejection_sampler.py#L461)中含有嵌套的for循环操作。这种逐个元素的操作方式无法利用NPU的并行计算能力，并且在循环内部反复创建新张量（如 `.clone()`, `torch.full()`），导致效率极低。
 
-我们优化的核心思想是​**向量化 \(Vectorization\)**​：去掉所有Python循环，使用PyTorch的张量操作来一次性处理所有数据。我们使用张量操作消除了循环内重复的张量创建，并通过高效的索引和广播实现了关键变量的计算。具体实现参考我们[开源的代码](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/qwen3/patches/vllm_ascend/0009-vllm_ascend-feature-rewrote-rejection-sampler.patch#L215)。后续可以使用 Triton 对这个模块做进一步的优化。
+我们优化的核心思想是​**向量化 \(Vectorization\)**​：去掉所有Python循环，使用PyTorch的张量操作来一次性处理所有数据。我们使用张量操作消除了循环内重复的张量创建，并通过高效的索引和广播实现了关键变量的计算。具体实现参考我们[开源的代码](https://gitcode.com/cann/cann-recipes-train/blob/master/llm_rl/qwen3/verl-mindspeed/patches/vllm_ascend)。后续可以使用 Triton 对这个模块做进一步的优化。
 
 ### 3.2 RL 训练实测收益
 

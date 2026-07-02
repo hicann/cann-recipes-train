@@ -1,0 +1,63 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM quay.io/ascend/vllm-ascend:v0.15.0rc1-a3-openeuler
+
+ARG PIP_INDEX_URL="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+ARG VERL_COMMIT="e9aa879bc61821621a36881ea305eaa0785520c1"
+ARG TORCHTITAN_COMMIT="ac13e536c84e7f6647b14fa9375c3c8a8a2b8578"
+ARG TORCHTITAN_NPU_COMMIT="29bbc8ba5bee5daf63f8a0c09512038449ffaf37"
+ARG VLLM_ASCEND_TAG="v0.15.0rc1"
+
+ENV TASK_QUEUE_ENABLE=1 \
+    OMP_NUM_THREADS=1
+
+SHELL ["/bin/bash", "-c"]
+
+RUN pip config set global.index-url ${PIP_INDEX_URL}
+
+WORKDIR /workspace
+
+# veRL
+RUN git clone https://gitcode.com/GitHub_Trending/ve/verl.git && \
+    cd verl && \
+    git checkout ${VERL_COMMIT}
+
+# TorchTitan
+RUN git clone https://gitcode.com/GitHub_Trending/to/torchtitan.git && \
+    cd torchtitan && \
+    git checkout ${TORCHTITAN_COMMIT}
+
+# TorchTitan-NPU
+RUN git clone https://gitcode.com/cann/torchtitan-npu.git && \
+    cd torchtitan-npu && \
+    git checkout ${TORCHTITAN_NPU_COMMIT}
+
+# vLLM-Ascend
+RUN git clone https://gitcode.com/gh_mirrors/vl/vllm-ascend.git && \
+    cd vllm-ascend && \
+    git checkout ${VLLM_ASCEND_TAG} && \
+    git submodule update --init --recursive
+
+# Install common Python dependencies. The sample's build_project.sh applies
+# version patches and rebuilds vllm-ascend after the recipe source is mounted.
+RUN python3 -m pip install modelscope 'ray>=2.47.1,<=2.48.0' 'protobuf>3.20.0' && \
+    python3 -m pip cache purge
+
+RUN yum install -y patch
+
+RUN echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> ~/.bashrc && \
+    echo "export LD_PRELOAD=/usr/lib64/libjemalloc.so.2:$LD_PRELOAD" >> ~/.bashrc
+
+CMD ["/bin/bash"]

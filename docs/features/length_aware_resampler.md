@@ -14,10 +14,10 @@ RL On-Policy 训练的 Rollout 阶段通常会遇到明显的 response 长尾问
 本特性以 Git Patch 的形式交付，文件位于：
 
 ```text
-llm_rl/qwen3/patches/verl/0019-verl-feature-length_aware_resampler.patch
+llm_rl/qwen3/verl-mindspeed/patches/verl/0019-verl-feature-length_aware_resampler.patch
 ```
 
-在 `llm_rl/qwen3/` 目录下执行以下命令即可应用全部 patch：
+在 `llm_rl/qwen3/verl-mindspeed/` 目录下执行以下命令即可应用全部 patch：
 
 ```bash
 bash apply_all_patches.sh
@@ -59,7 +59,7 @@ cap = min(response_length, max(min_tokens, factor * expected_len))
 本样例提供了一个最小可复现脚本：
 
 ```text
-llm_rl/qwen3/internal/train_grpo_qwen3_resampler_example.sh
+llm_rl/qwen3/verl-mindspeed/internal/train_grpo_qwen3_resampler_example.sh
 ```
 
 该脚本保留了以下内容：
@@ -90,7 +90,7 @@ export TEST_FILE=/path/to/test.parquet
 export REWARD_FUNCTION_PATH=/path/to/reward_function.py
 ```
 
-在 `llm_rl/qwen3/` 目录下执行：
+在 `llm_rl/qwen3/verl-mindspeed/` 目录下执行：
 
 ```bash
 bash internal/train_grpo_qwen3_resampler_example.sh

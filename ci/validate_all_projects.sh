@@ -34,6 +34,12 @@ SCAN_LIST=(
     # Other paths that needed check...
 )
 
+REQUIRED_FILES=(
+    "download_frameworks_source_code.sh"
+    "build_project.sh"
+    "apply_all_patches.sh"
+)
+
 echo -e "${CYAN}=== CI Starts ===${RESET}"
 
 set +e
@@ -78,6 +84,12 @@ validate_project() {
     echo -e "${GREEN}[OK] Project built.${RESET}"
 
     echo -e "${CYAN}=== Step 4: Apply patches ===${RESET}"
+
+    if grep -q "apply_all_patches.sh" build_project.sh; then
+        echo -e "${YELLOW}[SKIP] build_project.sh already applies patches.${RESET}"
+        echo -e "${GREEN}=== Project CI completed successfully ===${RESET}"
+        return 0
+    fi
     
     set +e
 
@@ -121,36 +133,64 @@ validate_project() {
     echo -e "${GREEN}=== Project CI completed successfully ===${RESET}"
 }
 
-for PROJECT in "${SCAN_LIST[@]}"; do
-    FULL_PATH="${ROOT_DIR}/${PROJECT}"
+has_required_files() {
+    local project_dir="$1"
+
+    for f in "${REQUIRED_FILES[@]}"; do
+        if [ ! -f "${project_dir}/${f}" ]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+for SCAN_PATH in "${SCAN_LIST[@]}"; do
+    FULL_PATH="${ROOT_DIR}/${SCAN_PATH}"
 
     if [ ! -d "$FULL_PATH" ]; then
         echo -e "${RED}[ERROR] Project directory not found: ${FULL_PATH}${RESET}"
         exit 1
     fi
 
-    PROJECT_BASENAME=$(basename "$FULL_PATH")
+    PROJECT_DIRS=()
+    if has_required_files "$FULL_PATH"; then
+        PROJECT_DIRS+=("$FULL_PATH")
+    else
+        while IFS= read -r SUBDIR; do
+            if has_required_files "$SUBDIR"; then
+                PROJECT_DIRS+=("$SUBDIR")
+            fi
+        done < <(find "$FULL_PATH" -mindepth 1 -maxdepth 1 -type d | sort)
+    fi
 
-    echo -e "${CYAN}--- Running CI for project: ${PROJECT} ---${RESET}"
-
-    for f in download_frameworks_source_code.sh build_project.sh apply_all_patches.sh; do
-        if [ ! -f "${FULL_PATH}/${f}" ]; then
-            echo -e "${RED}[ERROR] Missing ${f} in project ${PROJECT_BASENAME}${RESET}"
-            exit 1
-        fi
-    done
-
-    echo -e "${CYAN}Validating project ${PROJECT}${RESET}"
-    pushd "${FULL_PATH}" >/dev/null
-
-    if ! validate_project; then
-        echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_BASENAME}${RESET}"
-        popd >/dev/null
+    if [ ${#PROJECT_DIRS[@]} -eq 0 ]; then
+        SCAN_BASENAME=$(basename "$FULL_PATH")
+        echo -e "${RED}[ERROR] Missing required project scripts under ${SCAN_BASENAME}${RESET}"
+        for f in "${REQUIRED_FILES[@]}"; do
+            echo -e "${RED}[ERROR] Missing ${f} in project ${SCAN_BASENAME}${RESET}"
+        done
         exit 1
     fi
 
-    echo -e "${GREEN}[OK] Project ${PROJECT_BASENAME} passed CI.${RESET}"
-    popd >/dev/null
+    for PROJECT_DIR in "${PROJECT_DIRS[@]}"; do
+        PROJECT="${PROJECT_DIR#${ROOT_DIR}/}"
+        PROJECT_BASENAME=$(basename "$PROJECT_DIR")
+
+        echo -e "${CYAN}--- Running CI for project: ${PROJECT} ---${RESET}"
+
+        echo -e "${CYAN}Validating project ${PROJECT}${RESET}"
+        pushd "${PROJECT_DIR}" >/dev/null
+
+        if ! validate_project; then
+            echo -e "${RED}[ERROR] CI pipeline failed for ${PROJECT_BASENAME}${RESET}"
+            popd >/dev/null
+            exit 1
+        fi
+
+        echo -e "${GREEN}[OK] Project ${PROJECT_BASENAME} passed CI.${RESET}"
+        popd >/dev/null
+    done
 done
 
 echo -e "${GREEN}=== All projects passed CI ===${RESET}"

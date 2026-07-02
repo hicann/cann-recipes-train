@@ -1,0 +1,46 @@
+diff --git a/_ge_concrete_graph/continguous.py b/_ge_concrete_graph/continguous.py
+index 6c624392..200a40df 100644
+--- a/_ge_concrete_graph/continguous.py
++++ b/_ge_concrete_graph/continguous.py
+@@ -1,4 +1,7 @@
+-from torch.fx.experimental.symbolic_shapes import hint_int
++try:
++    from torch.fx.experimental.symbolic_shapes import hint_int
++except ImportError:
++    from torch.fx.experimental.symbolic_shapes import optimization_hint as hint_int
+ from torchair.core._concrete_graph import ValuePack
+ from torchair.ge._ge_graph import Tensor, is_sym, DataType
+ from torchair._ge_concrete_graph.utils import is_host_data_tensor, force_op_unknown_shape
+diff --git a/_ge_concrete_graph/infer_symbol_shape.py b/_ge_concrete_graph/infer_symbol_shape.py
+index 3a43b794..3193cc77 100644
+--- a/_ge_concrete_graph/infer_symbol_shape.py
++++ b/_ge_concrete_graph/infer_symbol_shape.py
+@@ -7,7 +7,11 @@ import warnings
+
+ import torch
+ from torch._subclasses.fake_tensor import FakeTensorMode
+-from torch.fx.experimental.symbolic_shapes import ShapeEnv, DimDynamic, hint_int
++try:
++    from torch.fx.experimental.symbolic_shapes import hint_int
++except ImportError:
++    from torch.fx.experimental.symbolic_shapes import optimization_hint as hint_int
++from torch.fx.experimental.symbolic_shapes import ShapeEnv, DimDynamic
+ from torch._dynamo.source import GlobalSource
+ from torchair.ge._ge_graph import torch_type_to_ge_type, torch_type_to_ge_type
+ from torchair.ge._ge_graph import is_sym, sym_to_ge_dtype, ge_type_to_torch_type, _ge_proto_dtype_to_ge_dtype
+diff --git a/_ge_concrete_graph/utils.py b/_ge_concrete_graph/utils.py
+index 6bfebdcd..7188acdd 100644
+--- a/_ge_concrete_graph/utils.py
++++ b/_ge_concrete_graph/utils.py
+@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Tuple, Union, Callable
+ import sympy
+ import torch
+ from torch.utils._mode_utils import no_dispatch
+-from torch.fx.experimental.symbolic_shapes import hint_int
++try:
++    from torch.fx.experimental.symbolic_shapes import hint_int
++except ImportError:
++    from torch.fx.experimental.symbolic_shapes import optimization_hint as hint_int
+ from torchair.core.utils import logger
+ from torchair._ge_concrete_graph.ge_ir_pb2 import GraphDef
+ from torchair.ge._ge_graph import compat_as_bytes, DataType, is_sym, Tensor, \
