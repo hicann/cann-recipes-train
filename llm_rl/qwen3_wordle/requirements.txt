@@ -1,0 +1,13 @@
+# Wordle RL on Ascend NPU — runtime dependencies
+# Note: torch, torch_npu, verl, vllm, vllm-ascend require manual install, see README.
+#       pyarrow, pandas, omegaconf, hydra-core, ray, wandb are pulled by verl automatically.
+
+--extra-index-url https://triton-ascend.osinfra.cn/pypi/simple
+triton-ascend==3.2.1
+
+setuptools<81
+
+nltk==3.9.4
+textarena==0.7.4
+modelscope
+tensorboard==2.20.0

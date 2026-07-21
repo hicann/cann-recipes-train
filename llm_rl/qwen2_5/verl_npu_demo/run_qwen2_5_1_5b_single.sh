@@ -44,6 +44,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_files=./data/math/data/train.parquet \
     data.val_files=./data/math/data/test.parquet \
     data.train_batch_size=256 \
+    data.val_batch_size=64 \
     data.max_prompt_length=512 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \

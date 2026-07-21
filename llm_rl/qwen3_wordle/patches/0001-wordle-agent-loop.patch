@@ -1,0 +1,377 @@
+From 068326ede2c8047574c655a20ad24ac6525df952 Mon Sep 17 00:00:00 2001
+From: qianbi1999 <zhoujian157@huawei.com>
+Date: Thu, 25 Jun 2026 10:08:35 +0800
+Subject: [PATCH] wordle: add agent loop with robust token and format tracking
+
+---
+ verl/experimental/agent_loop/__init__.py      |   3 +-
+ .../agent_loop/wordle_agent_loop.py           | 343 ++++++++++++++++++
+ 2 files changed, 345 insertions(+), 1 deletion(-)
+ create mode 100644 verl/experimental/agent_loop/wordle_agent_loop.py
+
+diff --git a/verl/experimental/agent_loop/__init__.py b/verl/experimental/agent_loop/__init__.py
+index 92385b42..3d8a2ce9 100644
+--- a/verl/experimental/agent_loop/__init__.py
++++ b/verl/experimental/agent_loop/__init__.py
+@@ -21,8 +21,9 @@ from .agent_loop import (
+ )
+ from .single_turn_agent_loop import SingleTurnAgentLoop
+ from .tool_agent_loop import ToolAgentLoop
++from .wordle_agent_loop import WordleAgentLoop
+ 
+-_ = [SingleTurnAgentLoop, ToolAgentLoop]
++_ = [SingleTurnAgentLoop, ToolAgentLoop, WordleAgentLoop]
+ 
+ __all__ = [
+     "AgentLoopBase",
+diff --git a/verl/experimental/agent_loop/wordle_agent_loop.py b/verl/experimental/agent_loop/wordle_agent_loop.py
+new file mode 100644
+index 00000000..5a7c138a
+--- /dev/null
++++ b/verl/experimental/agent_loop/wordle_agent_loop.py
+@@ -0,0 +1,343 @@
++# Adapted from verl's ToolAgentLoop implementation at:
++# https://github.com/volcengine/verl/blob/v0.8.0/verl/experimental/agent_loop/tool_agent_loop.py
++# Copyright 2025 Bytedance Ltd. and/or its affiliates
++# Copyright (c) 2026 Huawei Technologies Co., Ltd. All Rights Reserved.
++# Modifications for Wordle multi-turn text game RL training
++import logging
++import os
++import re
++from typing import Any
++
++from verl.experimental.agent_loop.agent_loop import (
++    AgentLoopBase,
++    AgentLoopOutput,
++    register,
++)
++from verl.utils.rollout_trace import rollout_trace_op
++
++
++logger = logging.getLogger(__file__)
++logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
++
++CANONICAL_GUESS_RE = re.compile(r"<guess>\s*\[([A-Za-z]{5})\]\s*</guess>")
++OPEN_GUESS_RE = re.compile(r"<guess\b", re.IGNORECASE)
++
++# Wordle system prompt (matches the SFT dataset format)
++DEFAULT_SYSTEM_PROMPT = """You are a competitive game player. Make sure you read the game instructions carefully, and always follow the required format.
++
++In each turn, think step-by-step, then output your guess exactly as <guess>[word]</guess>."""
++
++class WordleGameState:
++    """Encapsulates all state for a Wordle agent loop rollout."""
++
++    def __init__(
++        self,
++        messages: list[dict[str, Any]],
++        answer: str,
++        max_turns: int,
++        prompt_ids: list[int],
++        request_id: str,
++    ):
++        self.messages = messages
++        self.answer = answer.lower()
++        self.max_turns = max_turns
++        self.request_id = request_id
++
++        # Token tracking — ToolAgentLoop pattern:
++        # prompt_ids grows monotonically with ALL tokens (assistant + env).
++        # response_mask marks assistant tokens (1) vs env/structural tokens (0).
++        # response_ids is derived from prompt_ids at the end via splitting.
++        self.prompt_ids: list[int] = list(prompt_ids)
++        self.response_mask: list[int] = []
++        self.response_logprobs: list[float] = []
++
++        # Game state
++        self.turn = 0
++        self.guessed_words: set[str] = set()
++        self.game_over = False
++        self.is_correct = False
++        self.formatted_turns = 0
++
++        # Metrics
++        self.metrics: dict[str, Any] = {}
++        self.routed_experts = None
++
++    def to_output(self, response_length: int) -> AgentLoopOutput:
++        # ToolAgentLoop split: response = last len(mask) tokens of prompt_ids
++        mask_len = len(self.response_mask)
++        if mask_len:
++            response_ids = self.prompt_ids[-mask_len:]
++            prompt_ids = self.prompt_ids[:-mask_len]
++        else:
++            # ``list[-0:]`` returns the full list, not an empty list.
++            # Keep the original prompt intact when generation produced no tokens.
++            response_ids = []
++            prompt_ids = list(self.prompt_ids)
++
++        rlen = min(response_length, len(response_ids))
++        response_ids = response_ids[:rlen]
++        response_mask = self.response_mask[:rlen]
++        response_logprobs = self.response_logprobs[:rlen] if self.response_logprobs else None
++
++        self.metrics["is_correct"] = self.is_correct
++        self.metrics["num_turns"] = self.turn
++        self.metrics["answer"] = self.answer
++        self.metrics["guessed_words"] = list(self.guessed_words)
++
++        return AgentLoopOutput(
++            prompt_ids=prompt_ids,
++            response_ids=response_ids,
++            response_mask=response_mask,
++            response_logprobs=response_logprobs,
++            num_turns=self.turn,
++            metrics=self.metrics,
++            routed_experts=self.routed_experts,
++            extra_fields={"formatted_turns": self.formatted_turns},
++        )
++
++
++@register("wordle_agent")
++class WordleAgentLoop(AgentLoopBase):
++    """Agent loop for Wordle multi-turn text game RL training.
++
++    Each rollout consists of multiple turns:
++    1. LLM receives game state + history → generates <guess>[word]</guess>
++    2. Guess is extracted and validated against the secret word
++    3. Feedback (G/Y/X) is computed and appended as a user message
++    4. Repeat until correct guess, max turns reached, or generation truncated
++    """
++
++    def __init__(self, *args, tools=None, **kwargs):
++        super().__init__(*args, **kwargs)
++        # Wordle max turns — how many guesses the model gets
++        self.max_turns = getattr(
++            self.rollout_config.multi_turn, "max_user_turns", 6
++        ) or 6
++        self.prompt_length = self.rollout_config.prompt_length
++        self.response_length = self.rollout_config.response_length
++
++    @rollout_trace_op
++    async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
++        messages = list(kwargs["raw_prompt"])
++        answer = kwargs.get("answer", "")
++        if not answer:
++            raise ValueError("Wordle environment requires 'answer' in dataset")
++
++        request_id = kwargs.get("request_id", "")
++        # Build initial prompt with system prompt + game instructions
++        if not any(m.get("role") == "system" for m in messages):
++            messages.insert(0, {"role": "system", "content": DEFAULT_SYSTEM_PROMPT})
++
++        # Tokenize initial messages
++        prompt_ids = await self.apply_chat_template(messages, remove_system_prompt=False)
++
++        game = WordleGameState(
++            messages=messages,
++            answer=answer,
++            max_turns=self.max_turns,
++            prompt_ids=prompt_ids,
++            request_id=request_id,
++        )
++
++        # Multi-turn game loop
++        while not game.game_over:
++            # Generate LLM response
++            output = await self._generate_response(game, sampling_params)
++
++            if output is None:
++                game.game_over = True
++                break
++
++            # Keep the complete chat trajectory for metrics and diagnostics,
++            # including malformed, final-turn, and winning responses.
++            resp_text = self.tokenizer.decode(
++                output.token_ids, skip_special_tokens=True
++            )
++            game.messages.append({"role": "assistant", "content": resp_text})
++            if self._has_canonical_format(resp_text):
++                game.formatted_turns += 1
++
++            # Parse guess from the LATEST response tokens only
++            guess = self._parse_guess(output.token_ids)
++
++            if guess is None:
++                game.turn += 1
++                if game.turn >= game.max_turns:
++                    game.game_over = True
++                    break
++                env_msg = (
++                    "Invalid Move: No valid 5-letter guess found. "
++                    "Resubmit exactly as <guess>[word]</guess>."
++                )
++                await self._add_env_message(game, env_msg)
++                continue
++
++            game.turn += 1
++            # print(f"[Wordle] turn={game.turn}/{game.max_turns} guess={guess} answer={game.answer} "
++            #       f"resp_tokens={len(output.token_ids)} prompt_tokens={len(game.prompt_ids)}",
++            #       flush=True)
++
++            is_repeat = guess in game.guessed_words
++            game.guessed_words.add(guess)
++
++            # Check if guess is correct
++            if guess == game.answer:
++                game.is_correct = True
++                game.game_over = True
++                game.metrics["correct_answer"] = 1.0
++                break
++
++            # Check if max turns reached
++            if game.turn >= game.max_turns:
++                game.metrics["correct_answer"] = 0.0
++                game.game_over = True
++                break
++
++            # Check for repeat guess
++            if is_repeat:
++                env_msg = (
++                    f"You attempted an invalid move. Reason: You have already "
++                    f"guessed '{guess}' before. Please try a different word. "
++                    f"Please resubmit a valid move and remember to follow the game rules."
++                )
++            else:
++                # Compute Wordle feedback
++                feedback = self._compute_feedback(guess, game.answer)
++                remaining = game.max_turns - game.turn
++                env_msg = f"\n{' '.join(list(guess.upper()))}\n{feedback}\nYou have {remaining} guesses left."
++
++            await self._add_env_message(game, env_msg)
++
++        # Compute partial credit for non-winning games
++        if not game.is_correct:
++            game.metrics["correct_answer"] = 0.0
++            game.metrics["partial_answer"] = self._compute_partial(
++                game.guessed_words, game.answer
++            )
++
++        return game.to_output(self.response_length)
++
++    async def _generate_response(self, game: WordleGameState, sampling_params: dict) -> Any:
++        """Generate one LLM response, updating game state."""
++        try:
++            # Cap per-turn at 512 tokens — enough for think+guess, prevents
++            # the model from writing a novel in one turn and exhausting budget.
++            turn_params = dict(sampling_params)
++            turn_params["max_tokens"] = 512
++            output = await self.server_manager.generate(
++                request_id=game.request_id,
++                prompt_ids=game.prompt_ids,
++                sampling_params=turn_params,
++            )
++        except Exception:
++            logger.exception("LLM generation failed for request %s", game.request_id)
++            return None
++
++        if output is None or not output.token_ids:
++            return None
++
++        game.prompt_ids += output.token_ids
++        game.response_mask += [1] * len(output.token_ids)
++        if output.log_probs:
++            game.response_logprobs += output.log_probs
++        if output.routed_experts is not None:
++            game.routed_experts = output.routed_experts
++
++        return output
++
++    def _parse_guess(self, token_ids: list[int]) -> str | None:
++        """Extract the latest canonical guess from response tokens."""
++        text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
++        # Keep the contract consistent with the Prime Wordle SFT dataset.
++        matches = CANONICAL_GUESS_RE.findall(text)
++        if not matches:
++            return None
++        return matches[-1].lower()
++
++    @staticmethod
++    def _has_canonical_format(text: str) -> bool:
++        """Check that a response contains exactly one canonical guess tag."""
++        return (
++            len(CANONICAL_GUESS_RE.findall(text)) == 1
++            and len(OPEN_GUESS_RE.findall(text)) == 1
++        )
++
++    def _compute_feedback(self, guess: str, answer: str) -> str:
++        """Compute Wordle-style feedback string."""
++        result = []
++        answer_chars = list(answer)
++        guess_chars = list(guess)
++
++        # First pass: mark greens
++        for i in range(5):
++            if guess_chars[i] == answer_chars[i]:
++                result.append("G")
++                answer_chars[i] = None  # Consume
++            else:
++                result.append(None)  # Placeholder
++
++        # Second pass: mark yellows and wrongs
++        for i in range(5):
++            if result[i] is not None:
++                continue
++            if guess_chars[i] in answer_chars:
++                result[i] = "Y"
++                # Consume the first occurrence
++                idx = answer_chars.index(guess_chars[i])
++                answer_chars[idx] = None
++            else:
++                result[i] = "X"
++
++        return " ".join(result)
++
++    def _compute_partial(self, guessed_words: set[str], answer: str) -> float:
++        """Partial credit based on best match among guesses."""
++        if not guessed_words:
++            return 0.0
++        best = 0.0
++        for word in guessed_words:
++            answer_chars = list(answer)
++            word_chars = list(word)
++            greens = 0
++            yellows = 0
++
++            for i in range(len(answer_chars)):
++                if word_chars[i] == answer_chars[i]:
++                    greens += 1
++                    answer_chars[i] = None
++                    word_chars[i] = None
++
++            for char in word_chars:
++                if char is not None and char in answer_chars:
++                    yellows += 1
++                    answer_chars[answer_chars.index(char)] = None
++
++            score = 0.2 * greens + 0.1 * yellows
++            if score > best:
++                best = score
++        return best
++
++    async def _add_env_message(self, game: WordleGameState, content: str):
++        """Add environment feedback by appending raw tokens to prompt_ids.
++
++        Follows the ToolAgentLoop pattern: never re-tokenize the full
++        conversation. Instead, encode only the transition (close assistant
++        turn + user message + generation prompt) and append with mask=0.
++        """
++        eos_id = self.tokenizer.eos_token_id
++
++        # Build transition text: ensure assistant turn is closed with
++        # <|im_end|>\n, then add user message + generation prompt.
++        transition_text = ""
++        if not game.prompt_ids or game.prompt_ids[-1] != eos_id:
++            transition_text += "<|im_end|>"
++        transition_text += "\n<|im_start|>user\n" + content + "<|im_end|>\n<|im_start|>assistant\n"
++
++        transition_ids = self.tokenizer.encode(transition_text, add_special_tokens=False)
++
++        game.prompt_ids += transition_ids
++        game.response_mask += [0] * len(transition_ids)
++        if game.response_logprobs:
++            game.response_logprobs += [0.0] * len(transition_ids)
++
++        game.messages.append({"role": "user", "content": content})
+-- 
+2.43.0

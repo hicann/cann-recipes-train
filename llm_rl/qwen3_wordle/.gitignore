@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+data/
+models/
+checkpoint/
+outputs/
+tensorboard_log/
+train_log.txt
+tensorboard.log
+tensorboard.pid
+
+# Runtime clone populated by the setup instructions. The tracked integration
+# source of truth is patches/0001-wordle-agent-loop.patch.
+verl/
