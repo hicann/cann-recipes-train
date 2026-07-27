@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1812" height="986" viewBox="0 0 1812 986">
+  <rect width="1812" height="986" fill="#fff"/>
+  <style>
+    text{font-family:Arial,Helvetica,sans-serif;fill:#111;font-size:22px} .box{fill:#fff;stroke:#555;stroke-width:2} .line{fill:none;stroke:#444;stroke-width:2} .bold{font-weight:700} .center{text-anchor:middle} .small{font-size:20px} .title{font-size:31px;font-weight:700}
+  </style>
+  <!-- connectors -->
+  <path class="line" d="M357 564H389V334Q389 333 398 333H416 M389 564V884Q389 893 398 893H415"/>
+  <path class="line" d="M698 334H733V125Q733 115 743 115H774 M698 334H724Q733 334 733 343V648Q733 657 742 657H768 M698 893H768"/>
+  <path class="line" d="M987 115H1045 M982 367H1045 M991 657H1045 M1458 895H1459"/>
+  <!-- main node -->
+  <rect class="box" x="49" y="476" width="308" height="176" rx="11"/>
+  <text class="title center" x="203" y="538">reward_score</text>
+  <text class="small center" x="203" y="586">Composite Reward Function</text>
+  <text class="small center" x="203" y="619">for Math Reasoning</text>
+  <!-- total score -->
+  <rect x="49" y="691" width="308" height="157" rx="12" fill="#fff" stroke="#777" stroke-width="2" stroke-dasharray="8 3"/>
+  <text class="bold small center" x="203" y="739">Total Score =</text>
+  <text class="small center" x="203" y="778">Accuracy + Format + Reasoning</text>
+  <text class="small center" x="203" y="819">Range: 0 ~ 1.0</text>
+  <!-- answer branches -->
+  <rect class="box" x="416" y="264" width="282" height="140" rx="10"/>
+  <text class="bold center" x="557" y="322">Correct Answer</text>
+  <text class="small center" x="557" y="365">(Max 1.0 points)</text>
+  <rect class="box" x="415" y="825" width="282" height="133" rx="10"/>
+  <text class="bold center" x="556" y="880">Incorrect Answer</text>
+  <text class="small center" x="556" y="923">(0 points)</text>
+  <!-- criteria -->
+  <rect class="box" x="774" y="52" width="213" height="124" rx="9"/>
+  <text class="bold center" x="880" y="103">1. Accuracy</text><text class="small center" x="880" y="143">(0.7 points)</text>
+  <rect class="box" x="777" y="305" width="205" height="124" rx="9"/>
+  <text class="bold center" x="880" y="356">2. Format</text><text class="small center" x="880" y="397">(0.2 points)</text>
+  <rect class="box" x="768" y="600" width="223" height="114" rx="9"/>
+  <text class="bold center" x="879" y="647">3. Reasoning Chain</text><text class="small center" x="879" y="687">(0.1 points)</text>
+  <!-- accuracy detail -->
+  <rect class="box" x="1045" y="39" width="709" height="159" rx="9"/>
+  <text x="1079" y="88">Use <tspan class="bold">math_verify</tspan> to validate mathematical equivalence.</text>
+  <text x="1079" y="128">Prevent wrong answers from receiving partial credit</text>
+  <text x="1079" y="168">due to format or reasoning quality.</text>
+  <!-- format detail -->
+  <rect class="box" x="1045" y="234" width="709" height="283" rx="9"/>
+  <text x="1080" y="285">•&#160; Require strict output format:</text>
+  <rect x="1104" y="299" width="542" height="49" rx="8" fill="#f1f1f1"/>
+  <text x="1119" y="332" font-family="monospace">&lt;think&gt; ... &lt;/think&gt; &lt;answer&gt; ... &lt;/answer&gt;</text>
+  <text x="1080" y="397">•&#160; Each tag can appear only once. Multiple or missing</text>
+  <text x="1104" y="437">tags receive no score.</text>
+  <text x="1080" y="489">•&#160; Tags must be in the correct order and contain content.</text>
+  <!-- reasoning detail -->
+  <rect class="box" x="1045" y="553" width="709" height="225" rx="9"/>
+  <text x="1080" y="605">•&#160; The response must start with “step1:” or “Step 1:”,</text>
+  <text x="1104" y="646">indicating the first step of the reasoning process.</text>
+  <text x="1080" y="701">•&#160; Content must follow the step (sequence) and include</text>
+  <text x="1104" y="743">reasoning keywords such as <tspan font-style="italic">therefore, because, thus,</tspan> etc.</text>
+  <!-- incorrect detail -->
+  <rect class="box" x="768" y="825" width="690" height="143" rx="9"/>
+  <text x="800" y="866">If the final answer is mathematically incorrect,</text>
+  <text x="800" y="907">the total reward is 0, regardless of format</text>
+  <text x="800" y="948">or reasoning quality.</text>
+</svg>
