@@ -1,0 +1,126 @@
+From 099856fbbc13d5b529620b0020e4a62895a1f8fd Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Tue, 2 Jun 2026 15:53:24 +0800
+Subject: [PATCH 1/2] [Normalization] Add NpuFusedRMSNorm class and update
+ Attention module to use it
+
+---
+ src/diffusers/models/attention_processor.py | 14 +++++++-------
+ src/diffusers/models/embeddings.py          |  7 ++++---
+ src/diffusers/models/normalization.py       | 10 ++++++++++
+ 3 files changed, 21 insertions(+), 10 deletions(-)
+
+diff --git a/src/diffusers/models/attention_processor.py b/src/diffusers/models/attention_processor.py
+index 6e1dc1037..055277f96 100644
+--- a/src/diffusers/models/attention_processor.py
++++ b/src/diffusers/models/attention_processor.py
+@@ -138,7 +138,7 @@ class Attention(nn.Module):
+         super().__init__()
+ 
+         # To prevent circular import.
+-        from .normalization import FP32LayerNorm, LpNorm, RMSNorm
++        from .normalization import FP32LayerNorm, LpNorm, RMSNorm, NpuFusedRMSNorm
+ 
+         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
+         self.inner_kv_dim = self.inner_dim if kv_heads is None else dim_head * kv_heads
+@@ -203,12 +203,12 @@ class Attention(nn.Module):
+             self.norm_q = nn.LayerNorm(dim_head * heads, eps=eps)
+             self.norm_k = nn.LayerNorm(dim_head * kv_heads, eps=eps)
+         elif qk_norm == "rms_norm":
+-            self.norm_q = RMSNorm(dim_head, eps=eps)
+-            self.norm_k = RMSNorm(dim_head, eps=eps)
++            self.norm_q = NpuFusedRMSNorm(dim_head, eps=eps)
++            self.norm_k = NpuFusedRMSNorm(dim_head, eps=eps)
+         elif qk_norm == "rms_norm_across_heads":
+             # LTX applies qk norm across all heads
+-            self.norm_q = RMSNorm(dim_head * heads, eps=eps)
+-            self.norm_k = RMSNorm(dim_head * kv_heads, eps=eps)
++            self.norm_q = NpuFusedRMSNorm(dim_head * heads, eps=eps)
++            self.norm_k = NpuFusedRMSNorm(dim_head * kv_heads, eps=eps)
+         elif qk_norm == "l2":
+             self.norm_q = LpNorm(p=2, dim=-1, eps=eps)
+             self.norm_k = LpNorm(p=2, dim=-1, eps=eps)
+@@ -276,8 +276,8 @@ class Attention(nn.Module):
+                 self.norm_added_q = FP32LayerNorm(dim_head, elementwise_affine=False, bias=False, eps=eps)
+                 self.norm_added_k = FP32LayerNorm(dim_head, elementwise_affine=False, bias=False, eps=eps)
+             elif qk_norm == "rms_norm":
+-                self.norm_added_q = RMSNorm(dim_head, eps=eps)
+-                self.norm_added_k = RMSNorm(dim_head, eps=eps)
++                self.norm_added_q = NpuFusedRMSNorm(dim_head, eps=eps)
++                self.norm_added_k = NpuFusedRMSNorm(dim_head, eps=eps)
+             else:
+                 raise ValueError(
+                     f"unknown qk_norm: {qk_norm}. Should be one of `None,'layer_norm','fp32_layer_norm','rms_norm'`"
+diff --git a/src/diffusers/models/embeddings.py b/src/diffusers/models/embeddings.py
+index 1768c81ce..97bc0cee0 100644
+--- a/src/diffusers/models/embeddings.py
++++ b/src/diffusers/models/embeddings.py
+@@ -1154,8 +1154,8 @@ def get_1d_rotary_pos_embed(
+     freqs = torch.outer(pos, freqs)  # type: ignore   # [S, D/2]
+     if use_real and repeat_interleave_real:
+         # flux, hunyuan-dit, cogvideox
+-        freqs_cos = freqs.cos().repeat_interleave(2, dim=1).float()  # [S, D]
+-        freqs_sin = freqs.sin().repeat_interleave(2, dim=1).float()  # [S, D]
++        freqs_cos = freqs.cos().T.repeat_interleave(2, dim=0).T.contiguous().float()
++        freqs_sin = freqs.sin().T.repeat_interleave(2, dim=0).T.contiguous().float()
+         return freqs_cos, freqs_sin
+     elif use_real:
+         # stable audio, allegro
+@@ -1248,7 +1248,8 @@ class FluxPosEmbed(nn.Module):
+         sin_out = []
+         pos = ids.float()
+         is_mps = ids.device.type == "mps"
+-        freqs_dtype = torch.float32 if is_mps else torch.float64
++        is_npu = ids.device.type == "npu"
++        freqs_dtype = torch.float32 if is_mps or is_npu else torch.float64
+         for i in range(n_axes):
+             cos, sin = get_1d_rotary_pos_embed(
+                 self.axes_dim[i],
+diff --git a/src/diffusers/models/normalization.py b/src/diffusers/models/normalization.py
+index fe3823e32..30be81d41 100644
+--- a/src/diffusers/models/normalization.py
++++ b/src/diffusers/models/normalization.py
+@@ -577,6 +577,16 @@ class LpNorm(nn.Module):
+         return F.normalize(hidden_states, p=self.p, dim=self.dim, eps=self.eps)
+ 
+ 
++class NpuFusedRMSNorm(torch.nn.Module):
++    def __init__(self, dim, eps: float = 1e-6):
++        super().__init__()
++        self.weight = nn.Parameter(torch.ones(dim))
++        self.eps = eps
++
++    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
++        return torch_npu.npu_rms_norm(hidden_states.to(self.weight.dtype), self.weight, epsilon=self.eps)[0]
++
++
+ def get_normalization(
+     norm_type: str = "batch_norm",
+     num_features: Optional[int] = None,
+-- 
+2.25.1
+
+From 075369e87c2bcad07dbc556f9bdc3e0d30805fe9 Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Mon, 8 Jun 2026 15:49:12 +0800
+Subject: [PATCH 2/2] [Normalization] Import torch_npu for NPU support
+
+---
+ src/diffusers/models/normalization.py | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/diffusers/models/normalization.py b/src/diffusers/models/normalization.py
+index 30be81d41..bbd027dbd 100644
+--- a/src/diffusers/models/normalization.py
++++ b/src/diffusers/models/normalization.py
+@@ -17,6 +17,7 @@ import numbers
+ from typing import Dict, Optional, Tuple
+ 
+ import torch
++import torch_npu
+ import torch.nn as nn
+ import torch.nn.functional as F
+ 
+-- 
+2.25.1
+

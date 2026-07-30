@@ -1,0 +1,804 @@
+From c94c0c6513380c823c4ef50f91f38721d956d496 Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Tue, 2 Jun 2026 15:41:58 +0800
+Subject: [PATCH 1/4] =?UTF-8?q?=E6=9B=B4=E6=96=B0=E7=8E=AF=E5=A2=83?=
+ =?UTF-8?q?=E8=AE=BE=E7=BD=AE=E8=84=9A=E6=9C=AC=E5=92=8C=E9=A1=B9=E7=9B=AE?=
+ =?UTF-8?q?=E4=BE=9D=E8=B5=96=E9=A1=B9?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ env_setup.sh   |  8 ++------
+ pyproject.toml | 17 +++++++++--------
+ 2 files changed, 11 insertions(+), 14 deletions(-)
+
+diff --git a/env_setup.sh b/env_setup.sh
+index ca799d8..cb5c43d 100755
+--- a/env_setup.sh
++++ b/env_setup.sh
+@@ -1,14 +1,10 @@
+ #!/bin/bash
+ 
+-# install torch
+-pip install torch==2.5.0 torchvision --index-url https://download.pytorch.org/whl/cu121
+-
+-# install FA2 and diffusers
+-pip install packaging ninja && pip install flash-attn==2.7.0.post2 --no-build-isolation 
++pip install packaging==25.0 ninja==1.11.1.4
+ 
+ pip install -r requirements-lint.txt
+ 
+ # install fastvideo
+ pip install -e .
+ 
+-pip install ml-collections absl-py inflect==6.0.4 pydantic==1.10.9 huggingface_hub==0.24.0 protobuf==3.20.0 
++pip install ml-collections==1.1.0 absl-py==2.3.1 inflect==6.0.4
+diff --git a/pyproject.toml b/pyproject.toml
+index ab15c96..438b9f3 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -13,15 +13,16 @@ classifiers = [
+     "License :: OSI Approved :: Apache Software License",
+ ]
+ dependencies = [
+-"transformers==4.46.1", "accelerate==1.0.1", "tokenizers==0.20.1", "albumentations==1.4.20", "av==13.1.0", 
+-"decord==0.6.0", "einops==0.8.0", "fastapi==0.115.3", "gdown==5.2.0", "h5py==3.12.1", "idna==3.6", "imageio==2.36.0", 
++"transformers==4.54.0", "accelerate==1.9.0", "tokenizers==0.21.2", "albumentations==1.4.20", "av==13.1.0", 
++"einops==0.8.0", "fastapi==0.115.3", "gdown==5.2.0", "h5py==3.12.1", "idna==3.7", "imageio==2.36.0", 
+ "matplotlib==3.9.2", "numpy==1.26.3", "omegaconf==2.3.0", "opencv-python==4.10.0.84", "opencv-python-headless==4.10.0.84", 
+-"pandas==2.2.3", "pillow==10.2.0", "pydub==0.25.1", "pytorch-lightning==2.4.0", "pytorchvideo==0.1.5", "PyYAML==6.0.1", 
+-"regex==2024.9.11", "requests==2.31.0", "scikit-learn==1.5.2", "scipy==1.13.0", "six==1.16.0", "test-tube==0.7.5", 
+-"timm==1.0.11", "torchdiffeq==0.2.4", "torchmetrics==1.5.1", "tqdm==4.66.5", "urllib3==2.2.0", "uvicorn==0.32.0", 
+-"scikit-video==1.1.11", "imageio-ffmpeg==0.5.1", "sentencepiece==0.2.0", "beautifulsoup4==4.12.3", "ftfy==6.3.0", 
+-"moviepy==1.0.3", "wandb==0.18.5", "pydantic==2.9.2", "huggingface_hub==0.26.1", "protobuf==5.28.3", 
+-"watch", "gpustat", "peft==0.13.2", "liger_kernel==0.4.1", "einops==0.8.0", "wheel==0.44.0", "loguru", "diffusers==0.32.0", "bitsandbytes==0.44.1"]
++"pandas==2.2.3", "pillow==10.3.0", "pydub==0.25.1", "pytorch-lightning==2.4.0", "pytorchvideo==0.1.5", "PyYAML==6.0.1", 
++"regex==2024.9.11", "requests==2.33.0", "scikit-learn==1.5.2", "scipy==1.13.0", "six==1.16.0", "test-tube==0.7.5", 
++"timm==1.0.11", "torchdiffeq==0.2.4", "torchmetrics==1.5.1", "tqdm==4.66.5", "urllib3==2.6.3", "uvicorn==0.32.0", 
++"scikit-video==1.1.11", "imageio-ffmpeg==0.5.1", "sentencepiece==0.2.1", "beautifulsoup4==4.12.3", "ftfy==6.3.0", 
++"moviepy==1.0.3", "wandb==0.18.5", "pydantic==2.9.2", "huggingface_hub==0.26.1", "protobuf==3.20.0", 
++"watch==0.2.7", "gpustat==1.1.1", "peft==0.13.2", "liger_kernel==0.4.1", "wheel==0.44.0", "loguru==0.7.3",
++"diffusers==0.32.0", "bitsandbytes==0.46.1"]
+ 
+ 
+ 
+-- 
+2.25.1
+
+From 9430cb736fd7c07e95b90d6c6070c1e76c89c56b Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Tue, 2 Jun 2026 16:13:10 +0800
+Subject: [PATCH 2/4] 001
+
+---
+ .gitignore     | 1 +
+ pyproject.toml | 4 ++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+ create mode 100644 .gitignore
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..48eebd7
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1 @@
++fastvideo.egg-info/
+\ No newline at end of file
+diff --git a/pyproject.toml b/pyproject.toml
+index 438b9f3..c3a6f7e 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -13,14 +13,14 @@ classifiers = [
+     "License :: OSI Approved :: Apache Software License",
+ ]
+ dependencies = [
+-"transformers==4.54.0", "accelerate==1.9.0", "tokenizers==0.21.2", "albumentations==1.4.20", "av==13.1.0", 
++"torch==2.7.1", "torch-npu==2.7.1", "transformers==4.54.0", "accelerate==1.9.0", "tokenizers==0.21.2", "albumentations==1.4.20", "av==13.1.0", 
+ "einops==0.8.0", "fastapi==0.115.3", "gdown==5.2.0", "h5py==3.12.1", "idna==3.7", "imageio==2.36.0", 
+ "matplotlib==3.9.2", "numpy==1.26.3", "omegaconf==2.3.0", "opencv-python==4.10.0.84", "opencv-python-headless==4.10.0.84", 
+ "pandas==2.2.3", "pillow==10.3.0", "pydub==0.25.1", "pytorch-lightning==2.4.0", "pytorchvideo==0.1.5", "PyYAML==6.0.1", 
+ "regex==2024.9.11", "requests==2.33.0", "scikit-learn==1.5.2", "scipy==1.13.0", "six==1.16.0", "test-tube==0.7.5", 
+ "timm==1.0.11", "torchdiffeq==0.2.4", "torchmetrics==1.5.1", "tqdm==4.66.5", "urllib3==2.6.3", "uvicorn==0.32.0", 
+ "scikit-video==1.1.11", "imageio-ffmpeg==0.5.1", "sentencepiece==0.2.1", "beautifulsoup4==4.12.3", "ftfy==6.3.0", 
+-"moviepy==1.0.3", "wandb==0.18.5", "pydantic==2.9.2", "huggingface_hub==0.26.1", "protobuf==3.20.0", 
++"moviepy==1.0.3", "wandb==0.18.5", "pydantic==2.9.2", "huggingface_hub==0.34.0", "protobuf==3.20.0", 
+ "watch==0.2.7", "gpustat==1.1.1", "peft==0.13.2", "liger_kernel==0.4.1", "wheel==0.44.0", "loguru==0.7.3",
+ "diffusers==0.32.0", "bitsandbytes==0.46.1"]
+ 
+-- 
+2.25.1
+
+From ff63a0125f51a9f748c787276625d49e242717c7 Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Tue, 2 Jun 2026 20:00:01 +0800
+Subject: [PATCH 3/4] 002
+
+---
+ .gitignore | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/.gitignore b/.gitignore
+index 48eebd7..ff0b14c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1 +1,3 @@
+-fastvideo.egg-info/
+\ No newline at end of file
++fastvideo.egg-info
++data
++hps_ckpt
+\ No newline at end of file
+-- 
+2.25.1
+
+From b8aec1f6349c8b553d7095c1c8bc798c321c175a Mon Sep 17 00:00:00 2001
+From: luo-tong-an <luotongan@huawei.com>
+Date: Mon, 8 Jun 2026 15:48:33 +0800
+Subject: [PATCH 4/4] =?UTF-8?q?=E6=9B=B4=E6=96=B0=E4=BB=A3=E7=A0=81?=
+ =?UTF-8?q?=E4=BB=A5=E6=94=AF=E6=8C=81NPU=EF=BC=8C=E4=BF=AE=E6=94=B9?=
+ =?UTF-8?q?=E8=AE=BE=E5=A4=87=E8=AE=BE=E7=BD=AE=E5=92=8C=E7=9B=B8=E5=85=B3?=
+ =?UTF-8?q?=E5=8F=82=E6=95=B0=EF=BC=8C=E4=BC=98=E5=8C=96=E8=AE=AD=E7=BB=83?=
+ =?UTF-8?q?=E8=84=9A=E6=9C=AC=EF=BC=8C=E8=B0=83=E6=95=B4=E4=BE=9D=E8=B5=96?=
+ =?UTF-8?q?=E9=A1=B9=E7=89=88=E6=9C=AC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .gitignore                                    |   8 +-
+ .../preprocess_flux_embedding.py              |   6 +-
+ fastvideo/train_grpo_flux.py                  | 138 +++++++-----------
+ fastvideo/utils/fsdp_util.py                  |   6 +-
+ fastvideo/utils/load.py                       |  30 ++--
+ pyproject.toml                                |   4 +-
+ scripts/finetune/finetune_flux_grpo.sh        |  30 ++--
+ scripts/finetune/finetune_flux_grpo_8gpus.sh  |  30 ++--
+ .../finetune/finetune_flux_grpo_a3_16die.sh   |  67 +++++++++
+ .../preprocess_flux_rl_embeddings.sh          |  20 ++-
+ 10 files changed, 208 insertions(+), 131 deletions(-)
+ create mode 100644 scripts/finetune/finetune_flux_grpo_a3_16die.sh
+
+diff --git a/.gitignore b/.gitignore
+index ff0b14c..9c47571 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,3 +1,9 @@
+ fastvideo.egg-info
++fastvideo/*/__pycache__
++fastvideo/*/*/__pycache__
++fastvideo/*/*/*/__pycache__
+ data
+-hps_ckpt
+\ No newline at end of file
++hps_ckpt
++images
++kernel_meta
++wandb
+\ No newline at end of file
+diff --git a/fastvideo/data_preprocess/preprocess_flux_embedding.py b/fastvideo/data_preprocess/preprocess_flux_embedding.py
+index 952ac9e..2ef726e 100644
+--- a/fastvideo/data_preprocess/preprocess_flux_embedding.py
++++ b/fastvideo/data_preprocess/preprocess_flux_embedding.py
+@@ -67,11 +67,11 @@ def main(args):
+     world_size = int(os.getenv("WORLD_SIZE", 1))
+     print("world_size", world_size, "local rank", local_rank)
+ 
+-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+-    torch.cuda.set_device(local_rank)
++    device = torch.device("npu" if torch.npu.is_available() else "cpu")
++    torch.npu.set_device(local_rank)
+     if not dist.is_initialized():
+         dist.init_process_group(
+-            backend="nccl", init_method="env://", world_size=world_size, rank=local_rank
++            backend="hccl", init_method="env://", world_size=world_size, rank=local_rank
+         )
+ 
+     os.makedirs(args.output_dir, exist_ok=True)
+diff --git a/fastvideo/train_grpo_flux.py b/fastvideo/train_grpo_flux.py
+index f33b199..c45c042 100644
+--- a/fastvideo/train_grpo_flux.py
++++ b/fastvideo/train_grpo_flux.py
+@@ -20,10 +20,11 @@ from fastvideo.utils.parallel_states import (
+     nccl_info,
+ )
+ from fastvideo.utils.communications_flux import sp_parallel_dataloader_wrapper
+-from fastvideo.utils.validation import log_validation
++# from fastvideo.utils.validation import log_validation
+ import time
+ from torch.utils.data import DataLoader
+ import torch
++import torch_npu
+ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+ from torch.distributed.checkpoint.state_dict import get_model_state_dict, set_model_state_dict, StateDictOptions
+ 
+@@ -231,7 +232,8 @@ def run_sample_step(
+             timestep_value = int(sigma * 1000)
+             timesteps = torch.full([encoder_hidden_states.shape[0]], timestep_value, device=z.device, dtype=torch.long)
+             transformer.eval()
+-            with torch.autocast("cuda", torch.bfloat16):
++            with torch.autocast("npu", torch.bfloat16):
++                expanded_text_ids = text_ids.unsqueeze(1).repeat(1, encoder_hidden_states.shape[1], 1)
+                 pred= transformer(
+                     hidden_states=z,
+                     encoder_hidden_states=encoder_hidden_states,
+@@ -241,7 +243,7 @@ def run_sample_step(
+                         device=z.device,
+                         dtype=torch.bfloat16
+                     ),
+-                    txt_ids=text_ids.repeat(encoder_hidden_states.shape[1],1), # B, L
++                    txt_ids=expanded_text_ids[0],  # B, L
+                     pooled_projections=pooled_prompt_embeds,
+                     img_ids=image_ids,
+                     joint_attention_kwargs=None,
+@@ -272,7 +274,7 @@ def grpo_one_step(
+ ):
+     B = encoder_hidden_states.shape[0]
+     transformer.train()
+-    with torch.autocast("cuda", torch.bfloat16):
++    with torch.autocast("npu", torch.bfloat16):
+         pred= transformer(
+             hidden_states=latents,
+             encoder_hidden_states=encoder_hidden_states,
+@@ -323,7 +325,7 @@ def sample_reference_model(
+     IN_CHANNELS = 16
+     latent_w, latent_h = w // SPATIAL_DOWNSAMPLE, h // SPATIAL_DOWNSAMPLE
+ 
+-    batch_size = 1  
++    batch_size = args.rollout_batch_size
+     batch_indices = torch.chunk(torch.arange(B), B // batch_size)
+ 
+     all_latents = []
+@@ -335,7 +337,7 @@ def sample_reference_model(
+                 (1, IN_CHANNELS, latent_h, latent_w),  #（c,t,h,w)
+                 device=device,
+                 dtype=torch.bfloat16,
+-            )
++            ).repeat(batch_size, 1, 1, 1)
+ 
+     for index, batch_idx in enumerate(batch_indices):
+         batch_encoder_hidden_states = encoder_hidden_states[batch_idx]
+@@ -366,7 +368,8 @@ def sample_reference_model(
+                 grpo_sample,
+             )
+         
+-        all_image_ids.append(image_ids)
++        for _ in range(batch_size):
++            all_image_ids.append(image_ids)
+         all_latents.append(batch_latents)
+         all_log_probs.append(batch_log_probs)
+         vae.enable_tiling()
+@@ -376,60 +379,32 @@ def sample_reference_model(
+ 
+         
+         with torch.inference_mode():
+-            with torch.autocast("cuda", dtype=torch.bfloat16):
++            with torch.autocast("npu", dtype=torch.bfloat16):
+                 latents = unpack_latents(latents, h, w, 8)
+                 latents = (latents / 0.3611) + 0.1159
+                 image = vae.decode(latents, return_dict=False)[0]
+-                decoded_image = image_processor.postprocess(
++                batch_decoded_images = image_processor.postprocess(
+                 image)
+-        decoded_image[0].save(f"./images/flux_{rank}_{index}.png")
++        for idx, image in zip(batch_idx, batch_decoded_images):
++            image.save(f"./images/flux_{rank}_{idx}.png")
+ 
+         if args.use_hpsv2:
+             with torch.no_grad():
+-                image_path = decoded_image[0]
+-                image = preprocess_val(image_path).unsqueeze(0).to(device=device, non_blocking=True)
+-                # Process the prompt
+-                text = tokenizer([batch_caption[0]]).to(device=device, non_blocking=True)
+-                # Calculate the HPS
+-                with torch.amp.autocast('cuda'):
+-                    outputs = reward_model(image, text)
+-                    image_features, text_features = outputs["image_features"], outputs["text_features"]
+-                    logits_per_image = image_features @ text_features.T
+-                    hps_score = torch.diagonal(logits_per_image)
+-                all_rewards.append(hps_score)
++                for i, decoded_image in enumerate(batch_decoded_images):
++                    image_path = decoded_image
++                    image = preprocess_val(image_path).unsqueeze(0).to(device=device, non_blocking=True)
++                    # Process the prompt
++                    text = tokenizer([batch_caption[0]]).to(device=device, non_blocking=True)
++                    # Calculate the HPS
++                    with torch.amp.autocast('npu'):
++                        outputs = reward_model(image, text)
++                        image_features, text_features = outputs["image_features"], outputs["text_features"]
++                        logits_per_image = image_features @ text_features.T
++                        hps_score = torch.diagonal(logits_per_image)
++                    all_rewards.append(hps_score)
+         
+         if args.use_pickscore:
+-            def calc_probs(processor, model, prompt, images, device):
+-                # preprocess
+-                image_inputs = processor(
+-                    images=images,
+-                    padding=True,
+-                    truncation=True,
+-                    max_length=77,
+-                    return_tensors="pt",
+-                ).to(device)
+-                text_inputs = processor(
+-                    text=prompt,
+-                    padding=True,
+-                    truncation=True,
+-                    max_length=77,
+-                    return_tensors="pt",
+-                ).to(device)
+-                with torch.no_grad():
+-                    # embed
+-                    image_embs = model.get_image_features(**image_inputs)
+-                    image_embs = image_embs / torch.norm(image_embs, dim=-1, keepdim=True)
+-                
+-                    text_embs = model.get_text_features(**text_inputs)
+-                    text_embs = text_embs / torch.norm(text_embs, dim=-1, keepdim=True)
+-                
+-                    # score
+-                    scores = (text_embs @ image_embs.T)[0]
+-                
+-                return scores
+-            pil_images = [Image.open(f"./images/flux_{rank}_{index}.png")]
+-            score = calc_probs(tokenizer, reward_model, caption, pil_images, device)
+-            all_rewards.append(score)
++            main_print("[Warning] 'use_pickscore' is not supported yet, so this parameter will have no effect.")
+ 
+     all_latents = torch.cat(all_latents, dim=0)
+     all_log_probs = torch.cat(all_log_probs, dim=0)
+@@ -563,12 +538,10 @@ def train_one_step(
+         k: v.unsqueeze(1)
+         for k, v in samples.items()
+     }
+-    # dict of lists -> list of dicts for easier iteration
+-    samples_batched_list = [
+-        dict(zip(samples_batched, x)) for x in zip(*samples_batched.values())
+-    ]
++    train_mbs = args.train_micro_batch_size
+     train_timesteps = int(len(samples["timesteps"][0])*args.timestep_fraction)
+-    for i,sample in list(enumerate(samples_batched_list)):
++    for i in range(0, samples['latents'].shape[0], train_mbs):
++        sample = {k: v[i:i+train_mbs] for k, v in samples.items()}
+         for _ in range(train_timesteps):
+             clip_range = args.clip_range
+             adv_clip_max = args.adv_clip_max
+@@ -578,8 +551,8 @@ def train_one_step(
+                 sample["next_latents"][:,_],
+                 sample["encoder_hidden_states"],
+                 sample["pooled_prompt_embeds"],
+-                sample["text_ids"],
+-                sample["image_ids"],
++                sample["text_ids"][0],
++                sample["image_ids"][0],
+                 transformer,
+                 sample["timesteps"][:,_],
+                 perms[i][_],
+@@ -606,29 +579,29 @@ def train_one_step(
+             avg_loss = loss.detach().clone()
+             dist.all_reduce(avg_loss, op=dist.ReduceOp.AVG)
+             total_loss += avg_loss.item()
+-        if (i+1)%args.gradient_accumulation_steps==0:
++        if (i // train_mbs + 1) % args.gradient_accumulation_steps == 0:
+             grad_norm = transformer.clip_grad_norm_(max_grad_norm)
+             optimizer.step()
+             lr_scheduler.step()
+             optimizer.zero_grad()
+-        if dist.get_rank()%8==0:
+-            print("reward", sample["rewards"].item())
++        if dist.get_rank() == 0:
++            print("reward", sample["rewards"].mean().item())
+             print("ratio", ratio)
+-            print("advantage", sample["advantages"].item())
++            print("advantage", sample["advantages"].mean().item())
+             print("final loss", loss.item())
+         dist.barrier()
+     return total_loss, grad_norm.item()
+ 
+ 
+ def main(args):
+-    torch.backends.cuda.matmul.allow_tf32 = True
++    torch_npu.npu.matmul.allow_hf32 = True
+ 
+     local_rank = int(os.environ["LOCAL_RANK"])
+     rank = int(os.environ["RANK"])
+     world_size = int(os.environ["WORLD_SIZE"])
+-    dist.init_process_group("nccl")
+-    torch.cuda.set_device(local_rank)
+-    device = torch.cuda.current_device()
++    dist.init_process_group("hccl")
++    torch.npu.set_device(local_rank)
++    device = torch.npu.current_device()
+     initialize_sequence_parallel_state(args.sp_size)
+ 
+     # If passed along, set the training seed now. On GPU...
+@@ -679,19 +652,14 @@ def main(args):
+         #cp = huggingface_hub.hf_hub_download("xswu/HPSv2", hps_version_map["v2.1"])
+         cp = "./hps_ckpt/HPS_v2.1_compressed.pt"
+ 
+-        checkpoint = torch.load(cp, map_location=f'cuda:{device}')
++        checkpoint = torch.load(cp, map_location=f'npu:{device}')
+         model.load_state_dict(checkpoint['state_dict'])
+         processor = get_tokenizer('ViT-H-14')
+         reward_model = model.to(device)
+         reward_model.eval()
+ 
+     if args.use_pickscore:
+-        from transformers import AutoProcessor, AutoModel
+-        processor_name_or_path = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
+-        model_pretrained_name_or_path = "yuvalkirstain/PickScore_v1"
+-
+-        processor = AutoProcessor.from_pretrained(processor_name_or_path)
+-        reward_model = AutoModel.from_pretrained(model_pretrained_name_or_path).eval().to(device)
++        main_print("[Warning] 'use_pickscore' is not supported yet, so this parameter will have no effect.")
+ 
+     main_print(f"--> loading model from {args.pretrained_model_name_or_path}")
+     # keep the master weight to float32
+@@ -906,6 +874,18 @@ if __name__ == "__main__":
+         default=10,
+         help="Number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process.",
+     )
++    parser.add_argument(
++        "--rollout_batch_size",
++        type=int,
++        default=1,
++        help="Batch size (per device) for the rollout sampling.",
++    )
++    parser.add_argument(
++        "--train_micro_batch_size",
++        type=int,
++        default=1,
++        help="Micro batch size (per device) in training.",
++    )
+     parser.add_argument(
+         "--train_batch_size",
+         type=int,
+@@ -1007,14 +987,6 @@ if __name__ == "__main__":
+         help="Whether or not to use gradient checkpointing to save memory at the expense of slower backward pass.",
+     )
+     parser.add_argument("--selective_checkpointing", type=float, default=1.0)
+-    parser.add_argument(
+-        "--allow_tf32",
+-        action="store_true",
+-        help=(
+-            "Whether or not to allow TF32 on Ampere GPUs. Can be used to speed up training. For more information, see"
+-            " https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices"
+-        ),
+-    )
+     parser.add_argument(
+         "--mixed_precision",
+         type=str,
+@@ -1139,7 +1111,7 @@ if __name__ == "__main__":
+         "--use_pickscore",
+         action="store_true",
+         default=False,
+-        help="whether use pickscore as reward model",
++        help="whether use pickscore as reward model ([Warning] 'use_pickscore' is not supported yet, so this parameter will have no effect.)",
+     )
+     parser.add_argument(
+         "--ignore_last",
+diff --git a/fastvideo/utils/fsdp_util.py b/fastvideo/utils/fsdp_util.py
+index aed7fc3..05bd248 100644
+--- a/fastvideo/utils/fsdp_util.py
++++ b/fastvideo/utils/fsdp_util.py
+@@ -12,7 +12,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+ from torch.distributed.fsdp import MixedPrecision, ShardingStrategy
+ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+ 
+-from fastvideo.models.mochi_hf.modeling_mochi import MochiTransformerBlock
++# from fastvideo.models.mochi_hf.modeling_mochi import MochiTransformerBlock
+ from fastvideo.utils.load import get_no_split_modules
+ 
+ non_reentrant_wrapper = partial(
+@@ -95,7 +95,7 @@ def get_dit_fsdp_kwargs(
+     elif sharding_strategy == "hybrid_zero2":
+         sharding_strategy = ShardingStrategy._HYBRID_SHARD_ZERO2
+ 
+-    device_id = torch.cuda.current_device()
++    device_id = torch.npu.current_device()
+     cpu_offload = (torch.distributed.fsdp.CPUOffload(
+         offload_params=True) if cpu_offload else None)
+     fsdp_kwargs = {
+@@ -124,7 +124,7 @@ def get_discriminator_fsdp_kwargs(master_weight_type="fp32"):
+ 
+     mixed_precision = get_mixed_precision(master_weight_type)
+     sharding_strategy = ShardingStrategy.NO_SHARD
+-    device_id = torch.cuda.current_device()
++    device_id = torch.npu.current_device()
+     fsdp_kwargs = {
+         "auto_wrap_policy": auto_wrap_policy,
+         "mixed_precision": mixed_precision,
+diff --git a/fastvideo/utils/load.py b/fastvideo/utils/load.py
+index 6020381..c43f34a 100644
+--- a/fastvideo/utils/load.py
++++ b/fastvideo/utils/load.py
+@@ -9,16 +9,16 @@ from diffusers import AutoencoderKLHunyuanVideo, AutoencoderKLMochi
+ from torch import nn
+ from transformers import AutoTokenizer, T5EncoderModel
+ 
+-from fastvideo.models.hunyuan.modules.models import (
+-    HYVideoDiffusionTransformer, MMDoubleStreamBlock, MMSingleStreamBlock)
++# from fastvideo.models.hunyuan.modules.models import (
++#     HYVideoDiffusionTransformer, MMDoubleStreamBlock, MMSingleStreamBlock)
+ from fastvideo.models.hunyuan.text_encoder import TextEncoder
+ from fastvideo.models.hunyuan.vae.autoencoder_kl_causal_3d import \
+     AutoencoderKLCausal3D
+-from fastvideo.models.hunyuan_hf.modeling_hunyuan import (
+-    HunyuanVideoSingleTransformerBlock, HunyuanVideoTransformer3DModel,
+-    HunyuanVideoTransformerBlock)
+-from fastvideo.models.mochi_hf.modeling_mochi import (MochiTransformer3DModel,
+-                                                      MochiTransformerBlock)
++# from fastvideo.models.hunyuan_hf.modeling_hunyuan import (
++#     HunyuanVideoSingleTransformerBlock, HunyuanVideoTransformer3DModel,
++#     HunyuanVideoTransformerBlock)
++# from fastvideo.models.mochi_hf.modeling_mochi import (MochiTransformer3DModel,
++#                                                       MochiTransformerBlock)
+ from fastvideo.utils.logging_ import main_print
+ from diffusers.models.transformers.transformer_flux import FluxTransformer2DModel, FluxTransformerBlock, FluxSingleTransformerBlock
+ 
+@@ -359,14 +359,14 @@ def load_text_encoder(model_type, pretrained_model_name_or_path, device):
+ 
+ def get_no_split_modules(transformer):
+     # if of type MochiTransformer3DModel
+-    if isinstance(transformer, MochiTransformer3DModel):
+-        return (MochiTransformerBlock, )
+-    elif isinstance(transformer, HunyuanVideoTransformer3DModel):
+-        return (HunyuanVideoSingleTransformerBlock,
+-                HunyuanVideoTransformerBlock)
+-    elif isinstance(transformer, HYVideoDiffusionTransformer):
+-        return (MMDoubleStreamBlock, MMSingleStreamBlock)
+-    elif isinstance(transformer, FluxTransformer2DModel):
++    # if isinstance(transformer, MochiTransformer3DModel):
++    #     return (MochiTransformerBlock, )
++    # elif isinstance(transformer, HunyuanVideoTransformer3DModel):
++    #     return (HunyuanVideoSingleTransformerBlock,
++    #             HunyuanVideoTransformerBlock)
++    # elif isinstance(transformer, HYVideoDiffusionTransformer):
++    #     return (MMDoubleStreamBlock, MMSingleStreamBlock)
++    if isinstance(transformer, FluxTransformer2DModel):
+         return (FluxTransformerBlock, FluxSingleTransformerBlock)
+     else:
+         raise ValueError(f"Unsupported transformer type: {type(transformer)}")
+diff --git a/pyproject.toml b/pyproject.toml
+index c3a6f7e..7cf93a7 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -13,7 +13,7 @@ classifiers = [
+     "License :: OSI Approved :: Apache Software License",
+ ]
+ dependencies = [
+-"torch==2.7.1", "torch-npu==2.7.1", "transformers==4.54.0", "accelerate==1.9.0", "tokenizers==0.21.2", "albumentations==1.4.20", "av==13.1.0", 
++"torch==2.7.1", "torch-npu==2.7.1", "transformers==4.46.1", "accelerate==1.9.0", "tokenizers==0.20.4", "albumentations==1.4.20", "av==13.1.0", 
+ "einops==0.8.0", "fastapi==0.115.3", "gdown==5.2.0", "h5py==3.12.1", "idna==3.7", "imageio==2.36.0", 
+ "matplotlib==3.9.2", "numpy==1.26.3", "omegaconf==2.3.0", "opencv-python==4.10.0.84", "opencv-python-headless==4.10.0.84", 
+ "pandas==2.2.3", "pillow==10.3.0", "pydub==0.25.1", "pytorch-lightning==2.4.0", "pytorchvideo==0.1.5", "PyYAML==6.0.1", 
+@@ -22,7 +22,7 @@ dependencies = [
+ "scikit-video==1.1.11", "imageio-ffmpeg==0.5.1", "sentencepiece==0.2.1", "beautifulsoup4==4.12.3", "ftfy==6.3.0", 
+ "moviepy==1.0.3", "wandb==0.18.5", "pydantic==2.9.2", "huggingface_hub==0.34.0", "protobuf==3.20.0", 
+ "watch==0.2.7", "gpustat==1.1.1", "peft==0.13.2", "liger_kernel==0.4.1", "wheel==0.44.0", "loguru==0.7.3",
+-"diffusers==0.32.0", "bitsandbytes==0.46.1"]
++"diffusers==0.32.0", "bitsandbytes==0.46.1", "pybind11==3.0.4"]
+ 
+ 
+ 
+diff --git a/scripts/finetune/finetune_flux_grpo.sh b/scripts/finetune/finetune_flux_grpo.sh
+index 6e96952..2a38d0e 100644
+--- a/scripts/finetune/finetune_flux_grpo.sh
++++ b/scripts/finetune/finetune_flux_grpo.sh
+@@ -1,18 +1,25 @@
++#!/bin/bash
++
++# 根据实际情况修改 ascend-toolkit 路径
++source /usr/local/Ascend/cann/set_env.sh
++export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
++export TASK_QUEUE_ENABLE=2
++export COMBINED_ENABLE=1
++export CPU_AFFINITY_CONF=2
++export HCCL_CONNECT_TIMEOUT=1200
++export NPU_ASD_ENABLE=0
++export ASCEND_LAUNCH_BLOCKING=0
++export ACLNN_CACHE_LIMIT=100000
++export MULTI_STREAM_MEMORY_REUSE=2
++export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
++export HCCL_BUFFSIZE=800
++
+ export WANDB_DISABLED=true
+ export WANDB_BASE_URL="https://api.wandb.ai"
+ export WANDB_MODE=online
+ 
+ 
+-mkdir images
+-
+-
+-sudo apt-get update
+-yes | sudo apt-get install python3-tk
+-
+-git clone https://github.com/tgxs002/HPSv2.git
+-cd HPSv2
+-pip install -e . 
+-cd ..
++mkdir -p images
+ 
+ 
+ ###Actually, we don't use the original pytorch torchrun in our internal environment, 
+@@ -26,6 +33,8 @@ torchrun --nnodes=2 --nproc_per_node=8 --node_rank=0 --master_addr=192.168.0.101
+     --cache_dir data/.cache \
+     --data_json_path data/rl_embeddings/videos2caption.json \
+     --gradient_checkpointing \
++    --rollout_batch_size 4 \
++    --train_micro_batch_size 1 \
+     --train_batch_size 1 \
+     --num_latent_t 1 \
+     --sp_size 1 \
+@@ -36,7 +45,6 @@ torchrun --nnodes=2 --nproc_per_node=8 --node_rank=0 --master_addr=192.168.0.101
+     --learning_rate 1e-5 \
+     --mixed_precision bf16 \
+     --checkpointing_steps 40 \
+-    --allow_tf32 \
+     --cfg 0.0 \
+     --output_dir data/outputs/grpo \
+     --h 720 \
+diff --git a/scripts/finetune/finetune_flux_grpo_8gpus.sh b/scripts/finetune/finetune_flux_grpo_8gpus.sh
+index 4c09434..9e9a705 100644
+--- a/scripts/finetune/finetune_flux_grpo_8gpus.sh
++++ b/scripts/finetune/finetune_flux_grpo_8gpus.sh
+@@ -1,18 +1,25 @@
++#!/bin/bash
++
++# 根据实际情况修改 ascend-toolkit 路径
++source /usr/local/Ascend/cann/set_env.sh
++export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
++export TASK_QUEUE_ENABLE=2
++export COMBINED_ENABLE=1
++export CPU_AFFINITY_CONF=2
++export HCCL_CONNECT_TIMEOUT=1200
++export NPU_ASD_ENABLE=0
++export ASCEND_LAUNCH_BLOCKING=0
++export ACLNN_CACHE_LIMIT=100000
++export MULTI_STREAM_MEMORY_REUSE=2
++export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
++export HCCL_BUFFSIZE=800
++
+ export WANDB_DISABLED=true
+ export WANDB_BASE_URL="https://api.wandb.ai"
+ export WANDB_MODE=online
+ 
+ 
+-mkdir images
+-
+-
+-sudo apt-get update
+-yes | sudo apt-get install python3-tk
+-
+-git clone https://github.com/tgxs002/HPSv2.git
+-cd HPSv2
+-pip install -e . 
+-cd ..
++mkdir -p images
+ 
+ 
+ torchrun --nproc_per_node=8 --master_port 19002 \
+@@ -23,6 +30,8 @@ torchrun --nproc_per_node=8 --master_port 19002 \
+     --cache_dir data/.cache \
+     --data_json_path data/rl_embeddings/videos2caption.json \
+     --gradient_checkpointing \
++    --rollout_batch_size 4 \
++    --train_micro_batch_size 1 \
+     --train_batch_size 2 \
+     --num_latent_t 1 \
+     --sp_size 1 \
+@@ -33,7 +42,6 @@ torchrun --nproc_per_node=8 --master_port 19002 \
+     --learning_rate 1e-5 \
+     --mixed_precision bf16 \
+     --checkpointing_steps 40 \
+-    --allow_tf32 \
+     --cfg 0.0 \
+     --output_dir data/outputs/grpo \
+     --h 720 \
+diff --git a/scripts/finetune/finetune_flux_grpo_a3_16die.sh b/scripts/finetune/finetune_flux_grpo_a3_16die.sh
+new file mode 100644
+index 0000000..6bac85c
+--- /dev/null
++++ b/scripts/finetune/finetune_flux_grpo_a3_16die.sh
+@@ -0,0 +1,67 @@
++#!/bin/bash
++
++# 根据实际情况修改 ascend-toolkit 路径
++source /usr/local/Ascend/cann/set_env.sh
++export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
++export TASK_QUEUE_ENABLE=2
++export COMBINED_ENABLE=1
++export CPU_AFFINITY_CONF=2
++export HCCL_CONNECT_TIMEOUT=1200
++export NPU_ASD_ENABLE=0
++export ASCEND_LAUNCH_BLOCKING=0
++export ACLNN_CACHE_LIMIT=100000
++export MULTI_STREAM_MEMORY_REUSE=2
++export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
++export HCCL_BUFFSIZE=800
++
++export WANDB_DISABLED=true
++export WANDB_BASE_URL="https://api.wandb.ai"
++export WANDB_MODE=online
++
++
++mkdir -p images
++
++
++###Actually, we don't use the original pytorch torchrun in our internal environment, 
++###so I just follow the official example of pytorch.
++###Please adapt the torchrun scripts into your own environment
++torchrun --nnodes=1 --nproc_per_node=16 --node_rank=0 \
++    fastvideo/train_grpo_flux.py \
++    --seed 42 \
++    --pretrained_model_name_or_path data/flux \
++    --vae_model_path data/flux \
++    --cache_dir data/.cache \
++    --data_json_path data/rl_embeddings/videos2caption.json \
++    --gradient_checkpointing \
++    --rollout_batch_size 4 \
++    --train_micro_batch_size 1 \
++    --train_batch_size 1 \
++    --num_latent_t 1 \
++    --sp_size 1 \
++    --train_sp_batch_size 1 \
++    --dataloader_num_workers 4 \
++    --gradient_accumulation_steps 4 \
++    --max_train_steps 300 \
++    --learning_rate 1e-5 \
++    --mixed_precision bf16 \
++    --checkpointing_steps 40 \
++    --cfg 0.0 \
++    --output_dir data/outputs/grpo \
++    --h 720 \
++    --w 720 \
++    --t 1 \
++    --sampling_steps 16 \
++    --eta 0.3 \
++    --lr_warmup_steps 0 \
++    --sampler_seed 1223627 \
++    --max_grad_norm 1.0 \
++    --weight_decay 0.0001 \
++    --use_hpsv2 \
++    --num_generations 12 \
++    --shift 3 \
++    --use_group \
++    --ignore_last \
++    --timestep_fraction 0.6 \
++    --init_same_noise \
++    --clip_range 1e-4 \
++    --adv_clip_max 5.0 \
+\ No newline at end of file
+diff --git a/scripts/preprocess/preprocess_flux_rl_embeddings.sh b/scripts/preprocess/preprocess_flux_rl_embeddings.sh
+index 97c1ee6..eb8c78e 100644
+--- a/scripts/preprocess/preprocess_flux_rl_embeddings.sh
++++ b/scripts/preprocess/preprocess_flux_rl_embeddings.sh
+@@ -1,8 +1,24 @@
+-GPU_NUM=8 # 2,4,8
++#!/bin/bash
++
++# 根据实际情况修改 ascend-toolkit 路径
++# source /usr/local/Ascend/cann/set_env.sh
++export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
++export TASK_QUEUE_ENABLE=2
++export COMBINED_ENABLE=1
++export CPU_AFFINITY_CONF=2
++export HCCL_CONNECT_TIMEOUT=1200
++export NPU_ASD_ENABLE=0
++export ASCEND_LAUNCH_BLOCKING=0
++export ACLNN_CACHE_LIMIT=100000
++export MULTI_STREAM_MEMORY_REUSE=2
++export PYTORCH_NPU_ALLOC_CONF="expandable_segments:True"
++export HCCL_BUFFSIZE=800
++
++NPU_NUM=8 # 2,4,8
+ MODEL_PATH="data/flux"
+ OUTPUT_DIR="data/rl_embeddings"
+ 
+-torchrun --nproc_per_node=$GPU_NUM --master_port 19002 \
++torchrun --nproc_per_node=$NPU_NUM --master_port 19002 \
+     fastvideo/data_preprocess/preprocess_flux_embedding.py \
+     --model_path $MODEL_PATH \
+     --output_dir $OUTPUT_DIR \
+-- 
+2.25.1
+
