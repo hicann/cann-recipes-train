@@ -1,0 +1,668 @@
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/generation.yaml b/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/generation.yaml
+index e542d61..53c7079 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/generation.yaml
++++ b/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/generation.yaml
+@@ -43,6 +43,10 @@ rollout:
+   n: 1
+   # support logging rollout prob for debugging purpose
+   calculate_log_probs: False
++  spec_method: null
++  eagle3_draft_model: null
++  spec_num_speculative_tokens: 4
++  speculative_token_tree: null
+ actor:
+   strategy: fsdp  # This is for backward-compatibility
+   ulysses_sequence_parallel_size: 1 # sp size
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/rollout/rollout.yaml b/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/rollout/rollout.yaml
+index 536157a..ec2e4d9 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/rollout/rollout.yaml
++++ b/llm_rl/qwen3/verl-mindspeed/verl/trainer/config/rollout/rollout.yaml
+@@ -295,3 +295,17 @@ profiler:
+
+   # specific tool config
+   tool_config: ${oc.select:actor_rollout_ref.actor.profiler.tool_config,null}
++
++# spec decoding method
++spec_method: null
++
++# Optional draft model path for eagle3/dynamic_rl rollout.
++# If null, rollout will try to auto-detect a valid local eagle3 draft model.
++eagle3_draft_model: null
++
++# Number of speculative draft tokens used by eagle3/dynamic_rl.
++spec_num_speculative_tokens: 4
++
++# Optional speculative token tree for eagle3/dynamic_rl.
++# Example: "[(0,), (0, 0), (0, 0, 0)]"
++speculative_token_tree: null
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/trainer/ppo/ray_trainer.py b/llm_rl/qwen3/verl-mindspeed/verl/trainer/ppo/ray_trainer.py
+index 6256a3f..2a573e6 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/trainer/ppo/ray_trainer.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/trainer/ppo/ray_trainer.py
+@@ -34,6 +34,9 @@ from omegaconf import OmegaConf, open_dict
+ from torch.utils.data import Dataset, Sampler
+ from torchdata.stateful_dataloader import StatefulDataLoader
+ from tqdm import tqdm
++from vllm_ascend.spec_decode.global_module.prefix_tree import (
++    make_history_prompt_id,
++)
+
+ from verl import DataProto
+ from verl.experimental.dataset.sampler import AbstractCurriculumSampler
+@@ -341,6 +344,11 @@ class RayPPOTrainer:
+
+         self._create_dataloader(train_dataset, val_dataset, collate_fn, train_sampler)
+
++        # rollout spec
++        self.use_history_spec = config.actor_rollout_ref.rollout.spec_method in ("history_tree", "dynamic_rl")
++        self.use_eagle3_spec = config.actor_rollout_ref.rollout.spec_method in ("eagle3", "dynamic_rl")
++        self._pending_history_records = []
++
+         self.rollout_early_stop_enable = os.getenv("VLLM_ROLLOUT_EARLY_STOP_ENABLE", "1").lower() in (
+             "1",
+             "true",
+@@ -472,6 +480,109 @@ class RayPPOTrainer:
+
+         print(f"Dumped generations to {filename}")
+
++    def _normalize_token_ids(self, token_ids) -> Optional[list[int]]:
++        if token_ids is None:
++            return None
++        if isinstance(token_ids, torch.Tensor):
++            token_ids = token_ids.detach().cpu().tolist()
++        elif isinstance(token_ids, np.ndarray):
++            token_ids = token_ids.tolist()
++        elif isinstance(token_ids, tuple):
++            token_ids = list(token_ids)
++        elif not isinstance(token_ids, list):
++            return None
++
++        try:
++            return [int(token_id) for token_id in token_ids]
++        except (TypeError, ValueError):
++            return None
++
++    def _extract_prompt_token_ids(self, batch_item) -> Optional[list[int]]:
++        prompt_token_ids = batch_item.non_tensor_batch.get("history_tree_prompt_token_ids")
++        prompt_token_ids = self._normalize_token_ids(prompt_token_ids)
++        if prompt_token_ids is not None:
++            return prompt_token_ids
++
++        vllm_inputs = batch_item.non_tensor_batch.get("vllm_inputs")
++        prompt_token_ids = None
++        if isinstance(vllm_inputs, dict):
++            prompt_token_ids = vllm_inputs.get("prompt_token_ids")
++        if prompt_token_ids is None:
++            prompt_token_ids = batch_item.non_tensor_batch.get("raw_prompt_ids")
++        prompt_token_ids = self._normalize_token_ids(prompt_token_ids)
++        if prompt_token_ids is not None:
++            return prompt_token_ids
++
++        prompts = batch_item.batch.get("prompts") if batch_item.batch is not None else None
++        prompts = self._normalize_token_ids(prompts)
++        if prompts is None:
++            return None
++
++        pad_token_id = self.tokenizer.pad_token_id
++        if pad_token_id is None:
++            return prompts
++
++        first_non_pad = 0
++        while first_non_pad < len(prompts) and prompts[first_non_pad] == int(pad_token_id):
++            first_non_pad += 1
++        return prompts[first_non_pad:]
++
++    def _get_prompt_id(self, batch_item) -> Optional[str]:
++        prompt_token_ids = self._extract_prompt_token_ids(batch_item)
++        if not prompt_token_ids:
++            return None
++        return make_history_prompt_id(prompt_token_ids)
++
++    def _trim_response_token_ids(self, response_token_ids) -> Optional[list[int]]:
++        response = self._normalize_token_ids(response_token_ids)
++        if response is None:
++            return None
++        pad_token_id = self.tokenizer.pad_token_id
++        if pad_token_id is not None:
++            try:
++                response = response[:response.index(int(pad_token_id))]
++            except ValueError:
++                pass
++        return response
++
++    def _reset_history_trees(self) -> None:
++        self._pending_history_records = []
++
++    def _poll_history_tree_tasks(self, wait_for_all: bool = False) -> None:
++        return
++
++    def _drain_history_tree_records(self) -> list[dict]:
++        if not self._pending_history_records:
++            return []
++        records = self._pending_history_records
++        self._pending_history_records = []
++        return records
++
++    def _enqueue_curr_epoch_history_tree_data(self, batch: DataProto) -> None:
++        if not self.use_history_spec:
++            return
++
++        records = []
++        for i in range(len(batch)):
++            batch_item = batch[i]
++            prompt_id = self._get_prompt_id(batch_item)
++            if prompt_id is None:
++                continue
++
++            response = self._trim_response_token_ids(batch_item.batch["responses"])
++            if not response:
++                continue
++
++            reward = float(batch_item.batch["token_level_scores"].sum().item())
++            records.append(
++                {
++                    "prompt_id": prompt_id,
++                    "response_token_ids": response,
++                    "reward": reward,
++                })
++        if records:
++            self._pending_history_records.extend(records)
++
+     def _log_rollout_data(
+         self, batch: DataProto, reward_extra_infos_dict: dict, timing_raw: dict, rollout_data_dir: str
+     ):
+@@ -1062,6 +1173,9 @@ class RayPPOTrainer:
+         if self.config.actor_rollout_ref.rollout.get("skip_rollout", False):
+             rollout_skip = RolloutSkip(self.config, self.actor_rollout_wg)
+             rollout_skip.wrap_generate_sequences()
++
++        if self.use_history_spec:
++            self._reset_history_trees()
+
+         # add tqdm
+         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+@@ -1102,6 +1216,10 @@ class RayPPOTrainer:
+                 if response_cap is not None:
+                     gen_batch.meta_info["response_max_tokens_cap"] = int(response_cap)
+                     metrics["rollout/response_max_tokens_cap"] = int(response_cap)
++                if self.use_history_spec:
++                    history_tree_records = self._drain_history_tree_records()
++                    if history_tree_records:
++                        gen_batch.meta_info["history_tree_records"] = history_tree_records
+
+                 # pass global_steps to trace
+                 gen_batch.meta_info["global_steps"] = self.global_steps
+@@ -1122,12 +1240,16 @@ class RayPPOTrainer:
+                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                         else:
+                             gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
++                        gen_batch.meta_info.pop("history_tree_records", None)
+
+                         if data_rebalance:
+                             gen_batch_output.reorder(interleave_indices)
+
+                         timing_raw.update(gen_batch_output.meta_info["timing"])
+                         gen_batch_output.meta_info.pop("timing", None)
++                        rollout_metrics = gen_batch_output.meta_info.pop("metrics", None)
++                        if rollout_metrics:
++                            metrics.update(reduce_metrics(rollout_metrics))
+
+                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
+                         if self.reward_fn is None:
+@@ -1258,6 +1380,10 @@ class RayPPOTrainer:
+                             config=self.config.algorithm,
+                         )
+
++                    if self.use_history_spec:
++                        with marked_timer("collect_rollout_history_tree", timing_raw, color="navy"):
++                            self._enqueue_curr_epoch_history_tree_data(batch)
++
+                     # update critic
+                     if self.use_critic:
+                         with marked_timer("update_critic", timing_raw, color="pink"):
+@@ -1278,7 +1404,6 @@ class RayPPOTrainer:
+                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
+                     if rollout_data_dir:
+                         self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
+-
+                 # validate
+                 if (
+                     self.val_reward_fn is not None
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/utils/dataset/rl_dataset.py b/llm_rl/qwen3/verl-mindspeed/verl/utils/dataset/rl_dataset.py
+index 4de239c..1ed1f16 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/utils/dataset/rl_dataset.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/utils/dataset/rl_dataset.py
+@@ -138,6 +138,41 @@ class RLHFDataset(Dataset):
+
+         print(f"dataset len: {len(self.dataframe)}")
+
++        dataset_fraction = float(self.config.get("dataset_fraction", 1.0))
++        shuffle = bool(self.config.get("shuffle", False))
++        seed_val = self.config.get("seed", None)
++        if dataset_fraction < 1.0:
++            total = len(self.dataframe)
++            sample_size = int(total * dataset_fraction)
++            self.dataframe = self.dataframe.select(range(sample_size))
++            total = len(self.dataframe)
++            print(f"Sampled dataset len: {total} (fraction: {dataset_fraction})")
++
++        try:
++            max_samples = int(self.config.get("max_samples", -1))
++        except Exception:
++            max_samples = -1
++
++        if max_samples is None:
++            max_samples = -1
++
++        if max_samples > 0:
++            total = len(self.dataframe)
++            if max_samples < total:
++                if shuffle:
++                    # np.random.default_rng requires None -> no-arg, so handle accordingly
++                    if seed_val is None:
++                        rng = np.random.default_rng()
++                    else:
++                        rng = np.random.default_rng(seed_val)
++                    indices = rng.choice(total, size=max_samples, replace=False)
++                    indices = indices.tolist()
++                else:
++                    # 直接取前 max_samples 个
++                    indices = list(range(max_samples))
++                self.dataframe = self.dataframe.select(indices)
++                print(f"selected {len(self.dataframe)} samples (max_samples: {max_samples}) out of previous {total}")
++
+         self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
+
+     def maybe_filter_out_long_prompts(self, dataframe: datasets.Dataset = None):
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/utils/model.py b/llm_rl/qwen3/verl-mindspeed/verl/utils/model.py
+index 009b3de..972f2ed 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/utils/model.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/utils/model.py
+@@ -551,21 +551,22 @@ def load_mcore_dist_weights(parallel_model, dist_weight_path, is_value_model=Fal
+     # strict = StrictHandling.IGNORE_ALL if is_value_model else StrictHandling.ASSUME_OK_UNEXPECTED
+     strict = StrictHandling.ASSUME_OK_UNEXPECTED
+     for model in parallel_model:
+-        ssd = unwrap_model(model).sharded_state_dict()
++        unwrapped_model = unwrap_model(model)
++        ssd = unwrapped_model.sharded_state_dict()
+         if is_value_model:
+             for k in list(ssd.keys()):
+                 if "output_layer" in k:
+                     ssd.pop(k)
++        loaded_state_dict = dist_checkpointing.load(ssd, dist_weight_path, strict=strict)
++        unwrapped_model.load_state_dict(loaded_state_dict, strict=False)
++
+         if os.getenv('USE_ALLTOALL_OVERLAP', '0') == '1':
+-            new_ssd = dist_checkpointing.load(ssd, dist_weight_path, strict=strict)
+-            sd = unwrap_model(model).state_dict()
++            sd = unwrapped_model.state_dict()
+             for key in list(ssd.keys()):
+                 if "mlp.experts.weight" in key:
+                     with torch.no_grad():
+-                        ssd[key].data.copy_(new_ssd[key])   # param update
+-                        sd[key].copy_(new_ssd[key])         # tensor update
+-        else:
+-            dist_checkpointing.load(ssd, dist_weight_path, strict=strict)
++                        ssd[key].data.copy_(loaded_state_dict[key])   # param update
++                        sd[key].copy_(loaded_state_dict[key])         # tensor update
+
+     return
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/workers/config/rollout.py b/llm_rl/qwen3/verl-mindspeed/verl/workers/config/rollout.py
+index 9a2514f..237a54c 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/workers/config/rollout.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/workers/config/rollout.py
+@@ -178,6 +178,11 @@ class RolloutConfig(BaseConfig):
+
+     skip_tokenizer_init: bool = False
+
++    spec_method: Optional[str] = None
++    eagle3_draft_model: Optional[str] = None
++    spec_num_speculative_tokens: int = 4
++    speculative_token_tree: Optional[str] = None
++
+     def __post_init__(self):
+         """Validate the rollout config"""
+         if self.expert_parallel_size > 1:
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/workers/fsdp_workers.py b/llm_rl/qwen3/verl-mindspeed/verl/workers/fsdp_workers.py
+index a31c575..028cf2e 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/workers/fsdp_workers.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/workers/fsdp_workers.py
+@@ -630,7 +630,11 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
+         # For sync mode, we directly switch to trainer mode here.
+         # For async mode, we can't call run_until_complete here, so we will switch to trainer mode in AgentLoopManager.
+         if rollout_config.mode == "sync" and self._is_actor:
+-            loop = asyncio.get_event_loop()
++            try:
++                loop = asyncio.get_event_loop()
++            except RuntimeError:
++                loop = asyncio.new_event_loop()
++                asyncio.set_event_loop(loop)
+             loop.run_until_complete(self.trainer_mode())
+
+     async def rollout_mode(self):
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/workers/megatron_workers.py b/llm_rl/qwen3/verl-mindspeed/verl/workers/megatron_workers.py
+index 2269d43..edab368 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/workers/megatron_workers.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/workers/megatron_workers.py
+@@ -108,6 +108,40 @@ def set_random_seed(seed):
+
+
+ class MegatronWorker(Worker):
++    def _maybe_apply_qwen3_moe_runtime_env(self):
++        """Populate required MoE runtime envs when they are omitted by launch scripts.
++
++        Qwen3-MoE in this repo relies on the all-to-all overlap / reshaping path and
++        vLLM expert parallel support. The internal launch scripts export these envs
++        explicitly, but external scripts may not. Keep the existing explicit envs
++        untouched and only fill in safe defaults when absent.
++        """
++        if getattr(self.hf_config, "model_type", None) != "qwen3_moe":
++            return
++
++        applied_envs = {}
++
++        if "USE_ALLTOALL_OVERLAP" not in os.environ:
++            os.environ["USE_ALLTOALL_OVERLAP"] = "1"
++            applied_envs["USE_ALLTOALL_OVERLAP"] = "1"
++
++        if "ALL_TO_ALL_RESHARD" not in os.environ:
++            os.environ["ALL_TO_ALL_RESHARD"] = "1"
++            applied_envs["ALL_TO_ALL_RESHARD"] = "1"
++
++        if self._is_rollout:
++            if "VLLM_ENABLE_EXPERT_PARALLEL" not in os.environ:
++                os.environ["VLLM_ENABLE_EXPERT_PARALLEL"] = "1"
++                applied_envs["VLLM_ENABLE_EXPERT_PARALLEL"] = "1"
++
++            if "VLLM_DP_SIZE" not in os.environ:
++                rollout_tp = max(1, int(self.config.rollout.tensor_model_parallel_size))
++                rollout_pp = max(1, int(self.config.rollout.pipeline_model_parallel_size))
++                infer_world_size = rollout_tp * rollout_pp
++                vllm_dp_size = max(1, self.world_size // infer_world_size)
++                os.environ["VLLM_DP_SIZE"] = str(vllm_dp_size)
++                applied_envs["VLLM_DP_SIZE"] = str(vllm_dp_size)
++
+     def _init_hf_config_and_tf_config(
+         self,
+         model_path,
+@@ -314,6 +348,7 @@ class ActorRolloutRefWorker(MegatronWorker, DistProfilerExtension):
+             self.config.model.get("trust_remote_code", False),
+             self.config.actor.megatron.use_mbridge,
+         )
++        self._maybe_apply_qwen3_moe_runtime_env()
+         self.generation_config = get_generation_config(self.local_path)
+
+         if self._is_actor or self._is_rollout:
+@@ -455,7 +490,11 @@ class ActorRolloutRefWorker(MegatronWorker, DistProfilerExtension):
+         # For sync mode, we directly switch to trainer mode here.
+         # For async mode, we can't call run_until_complete here, so we will switch to trainer mode in AgentLoopManager.
+         if rollout_config.mode == "sync" and self._is_actor:
+-            loop = asyncio.get_event_loop()
++            try:
++                loop = asyncio.get_event_loop()
++            except RuntimeError:
++                loop = asyncio.new_event_loop()
++                asyncio.set_event_loop(loop)
+             loop.run_until_complete(self.trainer_mode())
+
+         # Revert to dummy_compile after rollout is built
+diff --git a/llm_rl/qwen3/verl-mindspeed/verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py b/llm_rl/qwen3/verl-mindspeed/verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py
+index d861ba0..3655a1f 100644
+--- a/llm_rl/qwen3/verl-mindspeed/verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py
++++ b/llm_rl/qwen3/verl-mindspeed/verl/workers/rollout/vllm_rollout/vllm_rollout_spmd.py
+@@ -101,6 +101,43 @@ if is_version_ge(pkg="vllm", minver="0.7.3"):
+
+
+ class vLLMRollout(BaseRollout):
++    @staticmethod
++    def _is_valid_model_dir(path: str | None) -> bool:
++        if not path:
++            return False
++        if not os.path.isdir(path):
++            return False
++        return any(
++            os.path.isfile(os.path.join(path, config_name))
++            for config_name in ("config.json", "params.json")
++        )
++
++    @classmethod
++    def _resolve_eagle3_draft_model(cls, model_path: str, configured_path: str | None = None) -> str:
++        base_dir = os.path.dirname(model_path)
++        model_name = os.path.basename(os.path.normpath(model_path))
++        candidates = [
++            configured_path,
++            "/home/data/Qwen3-30B-moe-eagle3",
++            os.path.join(base_dir, f"{model_name}-eagle3"),
++            os.path.join(base_dir, f"{model_name}-moe-eagle3"),
++            os.path.join(base_dir, "Qwen3-30B-moe-eagle3"),
++        ]
++
++        for candidate in candidates:
++            if cls._is_valid_model_dir(candidate):
++                return candidate
++
++        unique_candidates = []
++        for candidate in candidates:
++            if candidate and candidate not in unique_candidates:
++                unique_candidates.append(candidate)
++        raise FileNotFoundError(
++            "Unable to find a valid EAGLE3 draft model directory. "
++            f"Tried: {unique_candidates}. "
++            "Set rollout.eagle3_draft_model to a directory containing config.json."
++        )
++
+     def __init__(
+         self,
+         config: RolloutConfig,
+@@ -189,6 +226,29 @@ class vLLMRollout(BaseRollout):
+         if config.get("limit_images", None):  # support for multi-image data
+             engine_kwargs["limit_mm_per_prompt"] = {"image": config.get("limit_images")}
+
++        self.spec_method = config.spec_method
++        self.use_history_spec = config.spec_method in ("history_tree", "dynamic_rl")
++        self.use_eagle3_spec = config.spec_method in ("eagle3", "dynamic_rl")
++        if self.spec_method:
++            eagle3_draft_model = None
++            if self.use_eagle3_spec:
++                eagle3_draft_model = self._resolve_eagle3_draft_model(
++                    model_path,
++                    config.eagle3_draft_model,
++                )
++                logger.warning(
++                    "Using EAGLE3 draft model: %s for spec_method=%s",
++                    eagle3_draft_model,
++                    self.spec_method,
++                )
++            engine_kwargs["speculative_config"] = {
++                "method": self.spec_method,
++                "model": eagle3_draft_model,
++                "draft_tensor_parallel_size": 1 if self.use_eagle3_spec else None,
++                "num_speculative_tokens": config.spec_num_speculative_tokens,
++                "speculative_token_tree": config.speculative_token_tree,
++            }
++
+         compilation_config = {}
+
+         cudagraph_capture_sizes = config.get("cudagraph_capture_sizes")
+@@ -221,6 +281,7 @@ class vLLMRollout(BaseRollout):
+             enable_prefix_caching=config.enable_prefix_caching,
+             trust_remote_code=trust_remote_code,
+             seed=config.get("seed", 0),
++            async_scheduling=False,
+             additional_config={
+                 "ascend_scheduler_config": {
+                     "enabled": True,
+@@ -240,6 +301,12 @@ class vLLMRollout(BaseRollout):
+             **self.lora_kwargs,
+             **engine_kwargs,
+         )
++        # vLLM can expose padded vocab logits from tensor-parallel output heads.
++        # Mask them in sync rollout as well to avoid sampling pseudo tokens.
++        _monkey_patch_compute_logits(
++            self.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner.get_model(),
++            len(tokenizer),
++        )
+
+         kwargs = dict(
+             n=1,
+@@ -305,6 +372,114 @@ class vLLMRollout(BaseRollout):
+         for key, value in old_sampling_params_args.items():
+             setattr(self.sampling_params, key, value)
+
++    def _sync_history_tree_records(self, history_tree_records: list[dict]) -> int:
++        if not self.use_history_spec or not history_tree_records:
++            return 0
++
++        model_runner = self.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner
++        drafter = getattr(model_runner, "drafter", None)
++        if drafter is None or not hasattr(drafter, "sync_records"):
++            return 0
++        return int(drafter.sync_records(history_tree_records))
++
++    def _get_spec_drafter(self):
++        model_runner = self.inference_engine.llm_engine.model_executor.driver_worker.worker.model_runner
++        return getattr(model_runner, "drafter", None)
++
++    def _get_history_tree_metrics(self, device, reset: bool = True) -> dict[str, float]:
++        zero_metrics = {
++            "speculative_decoding/effective_percent": 0.0,
++            "speculative_decoding/effective_length": 0.0,
++            "speculative_decoding/predict_times": 0.0,
++            "speculative_decoding/effective_times": 0.0,
++            "speculative_decoding/total_right_length": 0.0,
++            "speculative_decoding/dynamic_rl/eagle_predict_times": 0.0,
++            "speculative_decoding/dynamic_rl/eagle_effective_times": 0.0,
++            "speculative_decoding/dynamic_rl/eagle_total_right_length": 0.0,
++            "speculative_decoding/dynamic_rl/eagle_effective_percent": 0.0,
++            "speculative_decoding/dynamic_rl/eagle_effective_length": 0.0,
++            "speculative_decoding/dynamic_rl/history_predict_times": 0.0,
++            "speculative_decoding/dynamic_rl/history_effective_times": 0.0,
++            "speculative_decoding/dynamic_rl/history_total_right_length": 0.0,
++            "speculative_decoding/dynamic_rl/history_effective_percent": 0.0,
++            "speculative_decoding/dynamic_rl/history_effective_length": 0.0,
++        }
++        if not self.use_history_spec:
++            return zero_metrics
++
++        drafter = self._get_spec_drafter()
++        if drafter is None or not hasattr(drafter, "get_metrics"):
++            return zero_metrics
++
++        local_metrics = drafter.get_metrics(reset=reset)
++        metrics_tensor = torch.tensor(
++            [
++                float(local_metrics.get("predict_times", 0.0)),
++                float(local_metrics.get("effective_times", 0.0)),
++                float(local_metrics.get("total_right_length", 0.0)),
++                float(local_metrics.get("dynamic_rl/eagle_predict_times", 0.0)),
++                float(local_metrics.get("dynamic_rl/eagle_effective_times", 0.0)),
++                float(local_metrics.get("dynamic_rl/eagle_total_right_length", 0.0)),
++                float(local_metrics.get("dynamic_rl/eagle_effective_percent", 0.0)),
++                float(local_metrics.get("dynamic_rl/eagle_effective_length", 0.0)),
++                float(local_metrics.get("dynamic_rl/history_predict_times", 0.0)),
++                float(local_metrics.get("dynamic_rl/history_effective_times", 0.0)),
++                float(local_metrics.get("dynamic_rl/history_total_right_length", 0.0)),
++                float(local_metrics.get("dynamic_rl/history_effective_percent", 0.0)),
++                float(local_metrics.get("dynamic_rl/history_effective_length", 0.0)),
++            ],
++            dtype=torch.float64,
++            device=device,
++        )
++        if torch.distributed.is_initialized():
++            torch.distributed.all_reduce(metrics_tensor)
++        (
++            predict_times,
++            effective_times,
++            total_right_length,
++            eagle_predict_times,
++            eagle_effective_times,
++            eagle_total_right_length,
++            eagle_effective_percent,
++            eagle_effective_length,
++            history_predict_times,
++            history_effective_times,
++            history_total_right_length,
++            history_effective_percent,
++            history_effective_length,
++        ) = metrics_tensor.tolist()
++        eagle_effective_percent = (
++            eagle_effective_times / eagle_predict_times if eagle_predict_times > 0 else 0.0
++        )
++        eagle_effective_length = (
++            eagle_total_right_length / eagle_effective_times if eagle_effective_times > 0 else 0.0
++        )
++        history_effective_percent = (
++            history_effective_times / history_predict_times if history_predict_times > 0 else 0.0
++        )
++        history_effective_length = (
++            history_total_right_length / history_effective_times if history_effective_times > 0 else 0.0
++        )
++        effective_percent = effective_times / predict_times if predict_times > 0 else 0.0
++        effective_length = total_right_length / effective_times if effective_times > 0 else 0.0
++        return {
++            "speculative_decoding/effective_percent": effective_percent,
++            "speculative_decoding/effective_length": effective_length,
++            "speculative_decoding/predict_times": predict_times,
++            "speculative_decoding/effective_times": effective_times,
++            "speculative_decoding/total_right_length": total_right_length,
++            "speculative_decoding/dynamic_rl/eagle_predict_times": eagle_predict_times,
++            "speculative_decoding/dynamic_rl/eagle_effective_times": eagle_effective_times,
++            "speculative_decoding/dynamic_rl/eagle_total_right_length": eagle_total_right_length,
++            "speculative_decoding/dynamic_rl/eagle_effective_percent": eagle_effective_percent,
++            "speculative_decoding/dynamic_rl/eagle_effective_length": eagle_effective_length,
++            "speculative_decoding/dynamic_rl/history_predict_times": history_predict_times,
++            "speculative_decoding/dynamic_rl/history_effective_times": history_effective_times,
++            "speculative_decoding/dynamic_rl/history_total_right_length": history_total_right_length,
++            "speculative_decoding/dynamic_rl/history_effective_percent": history_effective_percent,
++            "speculative_decoding/dynamic_rl/history_effective_length": history_effective_length,
++        }
++
+     @GPUMemoryLogger(role="vllm rollout spmd", logger=logger)
+     @torch.no_grad()
+     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
+@@ -338,6 +501,10 @@ class vLLMRollout(BaseRollout):
+
+         batch_size = idx.size(0)
+
++        history_tree_records = prompts.meta_info.pop("history_tree_records", None)
++        if history_tree_records:
++            self._sync_history_tree_records(history_tree_records)
++
+         non_tensor_batch = prompts.non_tensor_batch
+         if "raw_prompt_ids" not in non_tensor_batch:
+             non_tensor_batch["raw_prompt_ids"] = np.array(
+@@ -421,10 +588,14 @@ class vLLMRollout(BaseRollout):
+
+             response = []
+             rollout_log_probs = []
++            history_tree_prompt_token_ids = []
+             for output in outputs:
+                 for sample_id in range(len(output.outputs)):
+                     response_ids = output.outputs[sample_id].token_ids
+                     response.append(response_ids)
++                    history_tree_prompt_token_ids.append(
++                        list(output.prompt_token_ids) if output.prompt_token_ids is not None else []
++                    )
+                     if self.config.calculate_log_probs:
+                         curr_log_prob = []
+                         for i, logprob in enumerate(output.outputs[sample_id].logprobs):
+@@ -474,7 +645,17 @@ class vLLMRollout(BaseRollout):
+             # we will recompute old log prob with actor
+             batch["rollout_log_probs"] = rollout_log_probs
+
+-        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch)
++        non_tensor_batch["history_tree_prompt_token_ids"] = np.array(
++            history_tree_prompt_token_ids,
++            dtype=object,
++        )
++        history_tree_metrics = self._get_history_tree_metrics(idx.device, reset=True)
++
++        return DataProto(
++            batch=batch,
++            non_tensor_batch=non_tensor_batch,
++            meta_info={"metrics": history_tree_metrics},
++        )
+
+     async def resume(self, tags: list[str]):
+         """Resume rollout weights or kv cache in GPU memory.

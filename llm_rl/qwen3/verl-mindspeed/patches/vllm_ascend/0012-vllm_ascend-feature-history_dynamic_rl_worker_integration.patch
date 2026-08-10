@@ -1,0 +1,877 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: qiuzy3 <qiuzy3@users.noreply.github.com>
+Date: Mon, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Integrate history tree Dynamic RL with NPU worker
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/model_runner_v1.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/model_runner_v1.py
+index 7af8e6b..4ad889b 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/model_runner_v1.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/model_runner_v1.py
+@@ -20,6 +20,7 @@
+ import os
+ import math
+ import sys
++import time
+ from collections import defaultdict
+ from contextlib import contextmanager, nullcontext
+ from copy import copy, deepcopy
+@@ -76,6 +77,7 @@ from vllm.v1.worker.gpu_model_runner import (AsyncGPUModelRunnerOutput,
+                                              GPUModelRunner)
+ from vllm.v1.worker.kv_connector_model_runner_mixin import KVConnectorOutput
+ from vllm.v1.worker.utils import AttentionGroup
++from vllm.v1.spec_decode.utils import apply_draft_offsets
+
+ from vllm_ascend.ascend_config import get_ascend_config
+ from vllm_ascend.attention.attention_v1 import AscendAttentionState
+@@ -96,6 +98,7 @@ from vllm_ascend.eplb.utils import model_register
+ from vllm_ascend.ops.rotary_embedding import set_cos_and_sin, update_cos_sin
+ from vllm_ascend.patch.worker.patch_module import patch_torch_npu_argsort
+ from vllm_ascend.sample.sampler import AscendSampler
++from vllm_ascend.sample.tree_rejection_sampler import AscendTreeRejectionSampler
+ from vllm_ascend.spec_decode import get_spec_decode_method
+ from vllm_ascend.spec_decode.eagle_proposer import EagleProposer
+ from vllm_ascend.spec_decode.medusa_proposer import MedusaProposer
+@@ -183,6 +186,7 @@ class ExecuteModelState(NamedTuple):
+     attn_metadata: dict[str, Any]
+     positions: torch.Tensor
+     ec_connector_output: ECConnectorOutput | None
++    spec_timing_info: dict[str, Any] | None
+
+
+ class NPUModelRunner(GPUModelRunner):
+@@ -235,8 +239,12 @@ class NPUModelRunner(GPUModelRunner):
+                                                dtype=torch.int32)
+             self.positions = self._make_buffer(max_buffer_num_tokens,
+                                                dtype=torch.int64)
++            self.linear_positions = self._make_buffer(max_buffer_num_tokens,
++                                                      dtype=torch.int64)
+         self.sampler = AscendSampler()
+         self.attn_state = None
++        self._num_accepted_tokens_copy_event = torch.npu.Event()
++        self._num_accepted_tokens_copy_pending = False
+
+         # Ascend-specific configurations
+         self.ascend_config = get_ascend_config()
+@@ -271,6 +279,9 @@ class NPUModelRunner(GPUModelRunner):
+             and self.model_config.is_mm_prefix_lm)
+
+         self._set_up_drafter()
++        if not hasattr(self, "linear_positions"):
++            self.linear_positions = self._make_buffer(self.max_num_tokens,
++                                                      dtype=torch.int64)
+
+         # kv role
+         self.is_kv_producer = False
+@@ -354,6 +365,14 @@ class NPUModelRunner(GPUModelRunner):
+         self.intermediate_tensors: IntermediateTensors | None = None
+         self.reorder_batch_threshold: int | None = None
+         self.long_seq_metadata = None
++        self.spec_timing_enabled = os.getenv(
++            "VLLM_ASCEND_SPEC_TIMING", "").lower() in (
++                "1", "true", "yes", "y", "on")
++        self.spec_timing_log_every = max(
++            1, int(os.getenv("VLLM_ASCEND_SPEC_TIMING_LOG_EVERY", "1")))
++        self.spec_timing_first_n = max(
++            0, int(os.getenv("VLLM_ASCEND_SPEC_TIMING_FIRST_N", "20")))
++        self._spec_timing_log_step = 0
+
+     def _init_device_properties(self) -> None:
+         self.num_sms = None
+@@ -363,10 +382,11 @@ class NPUModelRunner(GPUModelRunner):
+
+     def _set_up_drafter(self):
+         # Set up speculative decoding.
+         self.speculative_auto_bs_thre = int(os.environ.get('VLLM_SPECULATIVE_BATCH_SIZE_THRE', "-1"))
+         # Indicates whether speculative decoding is active,
+         # set at runtime based on the batch-size threshold.
+-        self.speculative_decoding_active = False
++        self.speculative_decoding_active = bool(
++            self.speculative_config and self.speculative_config.method in ("history_tree", "dynamic_rl"))
+         self.drafter: Optional[Union[NgramProposer, EagleProposer, MtpProposer,
+                                      SuffixDecodingProposer,
+                                      MedusaProposer]] = None
+@@ -378,11 +393,20 @@ class NPUModelRunner(GPUModelRunner):
+             self.decode_token_per_req = 1 + spec_token_num
+             if get_pp_group().is_last_rank:
+                 self.drafter = self._get_drafter()
+-                if self.speculative_config.method == "eagle3":
+-                    assert isinstance(self.drafter, EagleProposer)
++                if self.speculative_config.method in ("eagle3", "dynamic_rl"):
+                     self.use_aux_hidden_state_outputs = (
+-                        self.drafter.eagle3_use_aux_hidden_state)
++                        getattr(self.drafter,
++                                "eagle3_use_aux_hidden_state",
++                                False))
+                 self.rejection_sampler = RejectionSampler(self.sampler)
++                if self.speculative_config.use_tree_spec_decode \
++                    or self.speculative_config.speculative_token_tree is not None:
++                    self.tree_rejection_sampler = AscendTreeRejectionSampler(
++                        self.speculative_config.tree_drafter_params,
++                        max_batch_size=self.max_num_reqs,
++                        sampler=self.sampler,
++                        device=self.device,
++                    )
+             self.actual_seq_lengths_q = list(
+                 range(self.decode_token_per_req, self.max_num_tokens + 1,
+                       self.decode_token_per_req))
+@@ -390,10 +414,73 @@ class NPUModelRunner(GPUModelRunner):
+                                                          dtype=torch.int64)
+         self.num_discarded_requests = 0
+
++    def _should_collect_spec_timing(self) -> bool:
++        return bool(self.speculative_config and self.spec_timing_enabled)
++
++    def _start_spec_timer(self, spec_timing_info: dict[str, Any] | None):
++        if spec_timing_info is None:
++            return None
++        start_event = torch.npu.Event(enable_timing=True)
++        end_event = torch.npu.Event(enable_timing=True)
++        start_event.record()
++        return start_event, end_event
++
++    def _wait_num_accepted_tokens_copy(self) -> None:
++        if self._num_accepted_tokens_copy_pending:
++            self._num_accepted_tokens_copy_event.synchronize()
++            self._num_accepted_tokens_copy_pending = False
++
++    def _end_spec_timer(
++        self,
++        spec_timing_info: dict[str, Any] | None,
++        key: str,
++        start_time: Any,
++    ) -> None:
++        if spec_timing_info is None or start_time is None:
++            return
++        start_event, end_event = start_time
++        end_event.record()
++        spec_timing_info.setdefault("_pending_events", []).append(
++            (key, start_event, end_event))
++
++    def _finalize_spec_timing(
++        self,
++        spec_timing_info: dict[str, Any] | None,
++    ) -> None:
++        if spec_timing_info is None:
++            return
++        pending_events = spec_timing_info.pop("_pending_events", None)
++        if not pending_events:
++            return
++        for key, start_event, end_event in pending_events:
++            end_event.synchronize()
++            spec_timing_info[key] = start_event.elapsed_time(end_event)
++
++    def _emit_spec_timing(self, spec_timing_info: dict[str, Any] | None):
++        if spec_timing_info is None:
++            return
++        self._finalize_spec_timing(spec_timing_info)
++
+     def _get_drafter(self):
+         return get_spec_decode_method(self.speculative_config.method,
+                                       self.vllm_config, self.device, self)
+
++    def _get_linear_positions(self,
++                              indices: Optional[Union[int, torch.Tensor]] = None
++                              ) -> torch.Tensor:
++        if indices is None:
++            return self.linear_positions.gpu
++        return self.linear_positions.gpu[indices]
++
++    def _get_drafter_positions(self,
++                               indices: Optional[Union[int, torch.Tensor]] = None
++                               ) -> torch.Tensor:
++        tree_bias_list = getattr(self.drafter, "tree_bias_list", None)
++        if (not self.uses_mrope and tree_bias_list is not None
++                and len(tree_bias_list) > 0):
++            return self._get_linear_positions(indices)
++        return self._get_positions(indices)
++
+     def _use_aclgraph(self) -> bool:
+         return self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE and self.compilation_config.mode == CompilationMode.VLLM_COMPILE and not self.model_config.enforce_eager
+
+@@ -529,7 +617,9 @@ class NPUModelRunner(GPUModelRunner):
+                 for num_tokens, i in zip(tokens, req_ids)
+             ],
+                                         dtype=np.int32)
+
+         # adaptive SD
+-        if self.speculative_config and self.speculative_auto_bs_thre > 0:
++        if (self.speculative_config
++                and self.speculative_config.method not in ("history_tree", "dynamic_rl")
++                and self.speculative_auto_bs_thre > 0):
+             if num_reqs > self.speculative_auto_bs_thre:
+@@ -725,6 +792,33 @@ class NPUModelRunner(GPUModelRunner):
+         self.query_start_loc.np[num_reqs + 1:].fill(cu_num_tokens[-1])
+         self.query_start_loc.copy_to_gpu()
+
++        if not self.uses_mrope:
++            self.linear_positions.cpu[:total_num_scheduled_tokens].copy_(
++                torch.from_numpy(positions_np.copy()))
++            self.linear_positions.copy_to_gpu(total_num_scheduled_tokens)
++
++        # print(f"before apply_draft_offsets, positions_np = {positions_np[-10:]}")
++        tree_bias_list = getattr(self.drafter, "tree_bias_list", None)
++        if tree_bias_list is not None and len(tree_bias_list) > 0:
++            assert self.speculative_config.tree_drafter_params is not None
++            # During tree spec decoding, token positions need to be offset
++            # by their levels in the draft tree.
++            apply_draft_offsets(
++                self.speculative_config.tree_drafter_params.draft_levels,
++                self.input_batch,
++                scheduler_output,
++                self.query_start_loc.np,
++                positions_np,
++            )
++            if not self.uses_mrope and self.uses_xdrope_dim <= 0:
++                # The drafter reads linear_positions in tree mode. Keep it in
++                # sync with the offset positions used by target verification.
++                self.linear_positions.cpu[:total_num_scheduled_tokens].copy_(
++                    torch.from_numpy(positions_np.copy()))
++                self.linear_positions.copy_to_gpu(total_num_scheduled_tokens)
++        # print(f"after apply_draft_offsets, positions_np = {positions_np[-10:]}")
++
++
+         self.seq_lens.np[:num_reqs] = (
+             self.input_batch.num_computed_tokens_cpu[:num_reqs] +
+             num_scheduled_tokens)
+@@ -819,6 +910,7 @@ class NPUModelRunner(GPUModelRunner):
+         # Used in the below loop.
+         self.spec_decode_common_attn_metadata = None
+         if use_spec_decode and self.need_accepted_tokens:
++            self._wait_num_accepted_tokens_copy()
+             self.num_accepted_tokens.np[:num_reqs] = (
+                 self.input_batch.num_accepted_tokens_cpu[:num_reqs])
+             self.num_accepted_tokens.np[num_reqs:].fill(1)
+@@ -994,6 +1086,12 @@ class NPUModelRunner(GPUModelRunner):
+                             num_decode_draft_tokens_cpu=self.
+                             num_decode_draft_tokens.cpu[:num_reqs],
+                         )
++                        tree_bias_list = getattr(self.drafter, "tree_bias_list", None)
++                        if tree_bias_list is not None and len(tree_bias_list) > 0:
++                            # tree_bias = torch.stack(tree_bias_list)
++                            extra_attn_metadata_args.update(dict(
++                                tree_attn_bias=tree_bias_list,
++                            ))
+                 attn_metadata_i = builder.build(
+                     common_prefix_len=common_prefix_len,
+                     common_attn_metadata=common_attn_metadata,
+@@ -1183,6 +1281,25 @@ class NPUModelRunner(GPUModelRunner):
+             logits_indices=logits_indices,
+         )
+
++    def _is_linear_tree_spec(self) -> bool:
++        if not self.speculative_config or self.drafter is None:
++            return False
++        tree_spec_requested = bool(
++            getattr(self.speculative_config, "use_tree_spec_decode", False)
++            or getattr(self.speculative_config, "speculative_token_tree", None)
++        )
++        if not tree_spec_requested:
++            return False
++        for attr in ("_parse_tree_choices", "_build_tree_info", "_is_linear_tree"):
++            if not hasattr(self.drafter, attr):
++                return False
++        try:
++            tree_choices = self.drafter._parse_tree_choices()
++            tree_info = self.drafter._build_tree_info(tree_choices)
++            return bool(self.drafter._is_linear_tree(tree_info))
++        except Exception:
++            return False
++
+     # TODO: Once the PCP features are complete, it will fully inherit the classes from the VLLM community.
+     def propose_draft_token_ids(
+         self,
+@@ -1201,20 +1318,106 @@ class NPUModelRunner(GPUModelRunner):
+             # Speculative decoding is not enabled.
+             draft_token_ids = None
+         else:
++            static_eagle_method = (
++                self.speculative_config.use_eagle()
++                and self.speculative_config.method != "dynamic_rl"
++            )
++            if static_eagle_method:
++                self.drafter.reset_tree_status()
++            if self.speculative_config.method == "dynamic_rl":
++                if self.drafter.mode == "eagle3":
++                    self.drafter.reset_tree_status()
+             if self.speculative_config.method in ("suffix", "ngram"):
+                 draft_token_ids = self.drafter.generate_token_ids(
+                     valid_sampled_token_ids, sampling_metadata,
+                     scheduler_output, spec_decode_metadata, positions,
+                     num_scheduled_tokens, hidden_states, aux_hidden_states)
++            elif self.speculative_config.method in ("history_tree") \
++                or (self.speculative_config.method == "dynamic_rl" \
++                    and self.drafter.mode == "history_rollout"):
++                accept_length_list = []
++                sampled_token_id_list = []
++                prompt_token_id_list = []
++                for i, sampled_ids in enumerate(valid_sampled_token_ids):
++                    req_id = self.input_batch.req_ids[i]
++                    req_state = self.requests[req_id]
++                    accept_length_list.append(len(sampled_ids))
++                    sampled_token_id_list.append(req_state.output_token_ids)
++                    prompt_token_id_list.append(req_state.prompt_token_ids)
++                if prompt_token_id_list:
++                    draft_token_ids = self.drafter.propose_batch(
++                        accept_length_list,
++                        sampled_token_id_list,
++                        prompt_token_id_list,
++                    )
++                else:
++                    draft_token_ids = []
+             elif isinstance(self.drafter, MedusaProposer):
+                 draft_token_ids = self.drafter.generate_token_ids(
+                     valid_sampled_token_ids, sampling_metadata,
+                     spec_decode_metadata, sample_hidden_states)
+-            elif self.speculative_config.use_eagle():
++            elif static_eagle_method \
++                or (self.speculative_config.method == "dynamic_rl" \
++                    and self.drafter.mode == "eagle3"):
+                 common_attn_metadata = self.spec_decode_common_attn_metadata
+                 sampled_token_ids = valid_sampled_token_ids
+-
+-                if self.vllm_config.speculative_config.disable_padded_drafter_batch:
++                tree_spec_requested = bool(
++                    getattr(self.speculative_config, "use_tree_spec_decode", False)
++                    or getattr(self.speculative_config, "speculative_token_tree", None))
++                actual_num_reqs = (
++                    len(spec_decode_metadata.num_draft_tokens)
++                    if spec_decode_metadata is not None else
++                    len(scheduler_output.num_scheduled_tokens))
++                chain_tree_fallback = bool(
++                    tree_spec_requested
++                    and hasattr(self.drafter, "should_use_chain_fallback")
++                    and self.drafter.should_use_chain_fallback(actual_num_reqs)
++                )
++                if hasattr(self.drafter, "set_chain_fallback_active"):
++                    self.drafter.set_chain_fallback_active(chain_tree_fallback)
++                linear_tree_spec = (
++                    self._is_linear_tree_spec() or chain_tree_fallback)
++                # A linear speculative_token_tree is semantically equivalent to
++                # the regular chain EAGLE path. Keeping it on the sparse-tree
++                # bridge adds extra compaction work and disables padded-batch
++                # fast paths without any verification benefit.
++                force_non_padded_tree = tree_spec_requested and not linear_tree_spec
++                scheduled_spec_decode_tokens = getattr(
++                    scheduler_output, "scheduled_spec_decode_tokens", None) or {}
++                # Non-linear tree drafting should follow the *actual* rows
++                # present in the current speculative metadata, not just the
++                # requests that already had prior-step draft tokens.
++                #
++                # In mixed ChunkedPrefill batches, `scheduled_spec_decode_tokens`
++                # only contains the requests already under verification, while
++                # `spec_decode_metadata` still covers the full batch and the
++                # newly prefilled requests must also enter speculative drafting
++                # immediately. Using only the scheduled-spec subset here
++                # collapses an 8-request batch down to 1 row, which is exactly
++                # why only req0 kept doing correct spec decoding in the logs.
++                if (force_non_padded_tree
++                        and isinstance(sampled_token_ids, torch.Tensor)):
++                    # Tree rejection runs under the target model's padded graph,
++                    # so sampled_token_ids can include cudagraph padding rows.
++                    # Trim only the extra padded rows, while preserving the
++                    # full real batch (including fresh prefill requests that
++                    # just entered speculative decoding this step).
++                    actual_num_reqs = min(actual_num_reqs,
++                                          sampled_token_ids.shape[0])
++                    sampled_token_ids = sampled_token_ids[:actual_num_reqs]
++
++                valid_sampled_tokens_count = None
++                use_padded_batch_for_eagle_inner = bool(
++                    (
++                        static_eagle_method
++                        or (self.speculative_config.method == "dynamic_rl"
++                            and self.drafter.mode == "eagle3")
++                    )
++                    and (not self.vllm_config.speculative_config.disable_padded_drafter_batch
++                         or force_non_padded_tree)
++                    and isinstance(sampled_token_ids, torch.Tensor)
++                )
++                if not use_padded_batch_for_eagle_inner:
+                     # When padded-batch is disabled, the sampled_token_ids should be
+                     # the cpu-side list[list[int]] of valid sampled tokens for each
+                     # request, with invalid requests having empty lists.
+@@ -1269,14 +1472,14 @@ class NPUModelRunner(GPUModelRunner):
+                             query_start_loc_pcp_full[1:num_reqs + 1] - 1
+                         target_token_ids = input_ids_pcp_full[:
+                                                               num_scheduled_tokens]
+-                        target_positions = self._get_positions(num_scheduled_tokens)
++                        target_positions = self._get_drafter_positions(num_scheduled_tokens)
+                         target_hidden_states = hidden_states
+                     else:
+                         token_indices_to_sample = None
+                         # input_ids can be None for multimodal models.
+                         target_token_ids = self.input_ids.gpu[:
+                                                               num_scheduled_tokens]
+-                        target_positions = self._get_positions(num_scheduled_tokens)
++                        target_positions = self._get_drafter_positions(num_scheduled_tokens)
+                         if self.use_aux_hidden_state_outputs:
+                             target_hidden_states = torch.cat([
+                                 h[:num_scheduled_tokens]
+@@ -1294,7 +1497,8 @@ class NPUModelRunner(GPUModelRunner):
+                         assert common_attn_metadata is not None
+                         common_attn_metadata.query_start_loc[:num_reqs + 1] = \
+                             query_start_loc_pcp_full[:num_reqs + 1]
+-                    if self.vllm_config.speculative_config.disable_padded_drafter_batch:
++                    if (self.vllm_config.speculative_config.disable_padded_drafter_batch
++                            and not force_non_padded_tree):
+                         # NOTE: Currently, MTP-fullgraph is incompatibility with pcp
+                         token_indices_to_sample = None
+                         assert self.drafter is not None
+@@ -1303,6 +1507,14 @@ class NPUModelRunner(GPUModelRunner):
+                                 common_attn_metadata,
+                                 sampled_token_ids,
+                                 spec_decode_metadata.num_draft_tokens)
++                    elif force_non_padded_tree:
++                        assert self.drafter is not None
++                        common_attn_metadata, token_indices, token_indices_to_sample, compact_tree_token_ids = self.drafter.prepare_inputs_tree_sparse(
++                                common_attn_metadata,
++                                sampled_token_ids,
++                                spec_decode_metadata.num_draft_tokens[:
++                                    actual_num_reqs],
++                            )
+                     else:
+                         assert self.drafter is not None
+                         common_attn_metadata, token_indices, \
+@@ -1316,8 +1528,37 @@ class NPUModelRunner(GPUModelRunner):
+                         target_positions = positions
+                         target_hidden_states = hidden_states
+                     else:
+-                        target_token_ids = self.input_ids.gpu[token_indices]
+-                        target_positions = self._get_positions(token_indices)
++                        if force_non_padded_tree and compact_tree_token_ids is not None:
++                            # `prepare_inputs_tree_sparse()` already remaps
++                            # `token_indices` to the source rows whose hidden
++                            # states should be reused for the accepted tree
++                            # path: synthetic root for the first accepted
++                            # child, then each accepted node for its own child.
++                            #
++                            # `_propose()` always left-shifts `target_token_ids`
++                            # before overwriting the final kept row with
++                            # `next_token_ids`. Therefore the token ids fed
++                            # here must come from those same source rows
++                            # (prefix/history tokens), not from the compacted
++                            # accepted-child sequence itself. Otherwise every
++                            # pair is shifted by one step:
++                            #   hidden(root), token(child1)   -> lost
++                            #   hidden(child1), token(child2) -> lost
++                            # and multi-branch tree drafting diverges from the
++                            # chain baseline as soon as a branch is accepted.
++                            target_token_ids = self.input_ids.gpu[token_indices]
++                        else:
++                            target_token_ids = self.input_ids.gpu[token_indices]
++                        if force_non_padded_tree:
++                            # prepare_inputs_tree_sparse() already remaps sparse
++                            # tree columns to the prefix context rows and stores
++                            # the compacted positions in the returned metadata.
++                            # Re-indexing the runner's linear/global position
++                            # buffer here can map later requests to row 0.
++                            target_positions = common_attn_metadata.positions
++                        else:
++                            target_positions = self._get_drafter_positions(
++                                token_indices)
+                         if self.use_aux_hidden_state_outputs:
+                             target_hidden_states = torch.cat(
+                                 [h[token_indices] for h in aux_hidden_states],
+@@ -1340,6 +1581,9 @@ class NPUModelRunner(GPUModelRunner):
+                     scheduler_output=scheduler_output,
+                     num_scheduled_tokens=num_scheduled_tokens,
+                 )
++                if (force_non_padded_tree and spec_decode_metadata is not None
++                        and torch.is_tensor(draft_token_ids)):
++                    draft_token_ids = draft_token_ids[:actual_num_reqs]
+
+             else:
+                 raise ValueError("Unknown speculative decoding method: "
+@@ -1434,8 +1673,22 @@ class NPUModelRunner(GPUModelRunner):
+                 head_dim=self.model_config.get_vocab_size(),
+                 generators=self.input_batch.sampling_metadata.generators)
+
++        spec_timing_info = None
++        if self._should_collect_spec_timing():
++            scheduled_spec_decode_tokens = getattr(
++                scheduler_output, "scheduled_spec_decode_tokens", None) or {}
++            spec_timing_info = {
++                "method": getattr(self.speculative_config, "method", None),
++                "attn_state": getattr(self.attn_state, "name",
++                                      str(self.attn_state)),
++                "num_reqs": self.input_batch.num_reqs,
++                "scheduled_tokens": scheduler_output.total_num_scheduled_tokens,
++                "spec_reqs_before": len(scheduled_spec_decode_tokens),
++            }
++
+         # Run forward pass
+         with ProfileExecuteDuration().capture_async("forward"):
++            forward_start_time = self._start_spec_timer(spec_timing_info)
+             with set_ascend_forward_context(
+                     attn_metadata,
+                     self.vllm_config,
+@@ -1443,13 +1696,15 @@ class NPUModelRunner(GPUModelRunner):
+                     num_tokens_across_dp=num_tokens_across_dp,
+                     aclgraph_runtime_mode=aclgraph_runtime_mode,
+                     batch_descriptor=batch_descriptor,
+                     num_actual_tokens=total_num_scheduled_tokens,
+                     model_instance=self.model):
+                 self.maybe_setup_kv_connector(scheduler_output)
+
+                 hidden_states = self._generate_process_reqs_hidden_states(
+                     num_input_tokens, input_ids, positions,
+                     intermediate_tensors, inputs_embeds, model_kwargs)
++            self._end_spec_timer(spec_timing_info, "forward_ms",
++                                 forward_start_time)
+
+             self.maybe_wait_for_kv_save()
+             finished_sending, finished_recving = self.get_finished_kv_transfer(
+@@ -1496,7 +1752,10 @@ class NPUModelRunner(GPUModelRunner):
+                         self.debugger.step()
+                     return pool_output
+                 sample_hidden_states = hidden_states[logits_indices]
++                logits_start_time = self._start_spec_timer(spec_timing_info)
+                 logits = self.model.compute_logits(sample_hidden_states)
++                self._end_spec_timer(spec_timing_info, "logits_ms",
++                                     logits_start_time)
+             if broadcast_pp_output:
+                 model_output_broadcast_data = {
+                     "logits": logits.contiguous(),
+@@ -1517,7 +1776,8 @@ class NPUModelRunner(GPUModelRunner):
+                 aux_hidden_states,
+                 attn_metadata,
+                 positions,
+-                ec_connector_output
++                ec_connector_output,
++                spec_timing_info,
+             )
+             self.kv_connector_output = kv_connector_output
+         return None
+@@ -1552,7 +1812,8 @@ class NPUModelRunner(GPUModelRunner):
+             aux_hidden_states,
+             attn_metadata,
+             positions,
+-            ec_connector_output
++            ec_connector_output,
++            spec_timing_info,
+         ) = self.execute_model_state
+         # Clear ephemeral state.
+         self.execute_model_state = None
+@@ -1568,7 +1829,10 @@ class NPUModelRunner(GPUModelRunner):
+             logits = logits.to(self.device).to(logits_dtype)
+
+         with ProfileExecuteDuration().capture_async("Sample"):
++            rejection_start_time = self._start_spec_timer(spec_timing_info)
+             sampler_output = self._sample(logits, spec_decode_metadata)
++            self._end_spec_timer(spec_timing_info, "rejection_sample_ms",
++                                 rejection_start_time)
+
+         def propose_draft_token_ids(sampled_token_ids):
+             assert self.spec_decode_common_attn_metadata is not None
+@@ -1584,8 +1848,23 @@ class NPUModelRunner(GPUModelRunner):
+                 aux_hidden_states,
+                 sample_hidden_states
+             )
++            if (
++                spec_timing_info is not None
++                and self.speculative_config is not None
++                and self.speculative_config.method == "dynamic_rl"
++                and self.drafter is not None
++                and hasattr(self.drafter, "get_last_decision_info")
++            ):
++                decision_info = self.drafter.get_last_decision_info()
++                if decision_info:
++                    spec_timing_info.update(decision_info)
+             self._copy_draft_token_ids_to_cpu(scheduler_output)
+
++        bookkeeping_start_time = None
++        if spec_timing_info is not None:
++            # The sync point is kept around the whole CPU bookkeeping section.
++            # This stage does not require explicit device synchronization.
++            bookkeeping_start_time = time.perf_counter()
+         (
+             logprobs_lists,
+             valid_sampled_token_ids,
+@@ -1601,20 +1880,86 @@ class NPUModelRunner(GPUModelRunner):
+             scheduler_output.total_num_scheduled_tokens,
+             spec_decode_metadata,
+         )
++        if spec_timing_info is not None and bookkeeping_start_time is not None:
++            spec_timing_info["bookkeeping_ms"] = (
++                time.perf_counter() - bookkeeping_start_time) * 1000.0
++            spec_timing_info["accepted_tokens"] = sum(
++                len(sampled_ids) for sampled_ids in valid_sampled_token_ids)
++        sampled_ids = sampler_output.sampled_token_ids
++        # print("sampled_ids: ", sampled_ids)
++        # print("valid_token_ids: ", valid_sampled_token_ids)
+
+         with ProfileExecuteDuration().capture_async("Draft"):
+-            if self.speculative_config and self.speculative_decoding_active and not self.with_prefill:
+-                use_padded_batch_for_eagle = self.speculative_config and \
+-                    self.speculative_config.use_eagle() and \
+-                    not self.speculative_config.disable_padded_drafter_batch
++            propose_start_time = self._start_spec_timer(spec_timing_info)
++            if (self.speculative_config and self.speculative_decoding_active
++                    and not self.with_prefill):
++                if (
++                    self.speculative_config.method == "dynamic_rl"
++                    and self.drafter is not None
++                    ):
++                        self.drafter.switch(valid_sampled_token_ids)
++                        if self.drafter.mode == "eagle3":
++                            self.drafter.reset_tree_status()
++                linear_tree_spec = self._is_linear_tree_spec()
++                use_padded_batch_for_eagle = bool(
++                    self.speculative_config
++                    and (
++                        (
++                            self.speculative_config.use_eagle()
++                            and self.speculative_config.method != "dynamic_rl"
++                        )
++                        or (self.speculative_config.method == "dynamic_rl"
++                            and self.drafter is not None
++                            and self.drafter.mode == "eagle3")
++                    )
++                    and not self.speculative_config.disable_padded_drafter_batch
++                    and not (
++                        (getattr(self.speculative_config, "use_tree_spec_decode", False)
++                         or getattr(self.speculative_config, "speculative_token_tree", None))
++                        and not linear_tree_spec
++                    )
++                )
+                 if use_padded_batch_for_eagle:
+-                    # EAGLE speculative decoding can use the GPU sampled tokens
+-                    # as inputs, and does not need to wait for bookkeeping to finish.
++                    # EAGLE/EAGLE3 speculative decoding can use the GPU sampled
++                    # tokens as inputs, and does not need to wait for
++                    # bookkeeping to finish.
+                     propose_draft_token_ids(sampler_output.sampled_token_ids)
+                 if self.speculative_config and not use_padded_batch_for_eagle:
+                     # ngram and other speculative decoding methods use the sampled
+                     # tokens on the CPU, so they are run after bookkeeping.
+-                    propose_draft_token_ids(valid_sampled_token_ids)
++                    force_tree_spec = bool(
++                        getattr(self.speculative_config,
++                                "use_tree_spec_decode", False)
++                        or getattr(self.speculative_config,
++                                   "speculative_token_tree", None))
++                    if (force_tree_spec and not linear_tree_spec
++                            and spec_decode_metadata is not None):
++                        propose_draft_token_ids(sampler_output.sampled_token_ids)
++                    else:
++                        propose_draft_token_ids(valid_sampled_token_ids)
++            self._end_spec_timer(spec_timing_info, "propose_draft_ms",
++                                 propose_start_time)
++            if spec_timing_info is not None:
++                draft_token_ids = self._draft_token_ids
++                if isinstance(draft_token_ids, list):
++                    spec_timing_info["spec_reqs_after"] = sum(
++                        1 for draft_ids in draft_token_ids if draft_ids)
++                    spec_timing_info["draft_tokens_after"] = sum(
++                        len(draft_ids) for draft_ids in draft_token_ids
++                        if draft_ids)
++                elif torch.is_tensor(draft_token_ids):
++                    if draft_token_ids.ndim >= 2:
++                        valid_mask = draft_token_ids.ne(-1)
++                        spec_timing_info["spec_reqs_after"] = int(
++                            valid_mask.any(dim=1).sum().item())
++                        spec_timing_info["draft_tokens_after"] = int(
++                            valid_mask.sum().item())
++                    elif draft_token_ids.ndim == 1:
++                        valid_mask = draft_token_ids.ne(-1)
++                        spec_timing_info["spec_reqs_after"] = int(
++                            valid_mask.any().item())
++                        spec_timing_info["draft_tokens_after"] = int(
++                            valid_mask.sum().item())
+
+             if has_kv_transfer_group():
+                 get_kv_transfer_group().clear_connector_metadata()
+@@ -1631,19 +1975,24 @@ class NPUModelRunner(GPUModelRunner):
+         )
+
+         durations = ProfileExecuteDuration().pop_captured_sync()
++        if (
++            spec_timing_info is not None
++            and self.speculative_config is not None
++            and self.speculative_config.method == "dynamic_rl"
++            and self.drafter is not None
++            and hasattr(self.drafter, "observe_step_result")
++        ):
++            self._finalize_spec_timing(spec_timing_info)
++            self.drafter.observe_step_result(spec_timing_info)
++        self._emit_spec_timing(spec_timing_info)
+         if durations:
+             dr_str = [
+                 f"[{tag}]:{duration:.2f}ms"
+                 for tag, duration in durations.items()
+             ]
+-            captured_name = "Prefill"
+-            if self.attn_state == AscendAttentionState.DecodeOnly:
+-                captured_name = "Decode"
+-            elif self.attn_state == AscendAttentionState.SpecDecoding:
+-                captured_name = "SpecDecode"
+-            logger.info(f"Current reqs:{self.input_batch.num_reqs} " +
+-                        f"Profile execute duration [{captured_name}]:{' '.join(dr_str)}")
+-
++            captured_name = "Decode" if self.attn_state == AscendAttentionState.DecodeOnly else "Prefill"
++            logger.info("Profile execute duration [%s]:%s", captured_name,
++                        " ".join(dr_str))
+         if self.dynamic_eplb:
+             self.eplb_updator.forward_end()
+         if not self.use_async_scheduling:
+@@ -1680,17 +2029,85 @@ class NPUModelRunner(GPUModelRunner):
+
+         if lmhead_tp_enable() and logits is not None:
+             logits = logits[:len(spec_decode_metadata.logits_indices)]
+-        sampler_output = self.rejection_sampler(
+-            spec_decode_metadata,
+-            None,  # draft_probs
+-            logits,
+-            sampling_metadata,
+-        )
++        tree_bias_list = getattr(self.drafter, "tree_bias_list", None)
++        if tree_bias_list is not None and len(tree_bias_list) > 0:
++            sampler_output = self.tree_rejection_sampler(
++                spec_decode_metadata,
++                None,  # draft_probs
++                logits,
++                sampling_metadata,
++            )
++        else:
++            sampler_output = self.rejection_sampler(
++                spec_decode_metadata,
++                None,  # draft_probs
++                logits,
++                sampling_metadata,
++            )
+         if self.need_accepted_tokens:  # TODO remove this if
+             self._update_states_after_model_execute(
+                 sampler_output.sampled_token_ids)
+         return sampler_output
+
++    def _update_states_after_model_execute(
++        self,
++        output_token_ids: torch.Tensor,
++    ) -> None:
++        if not self.speculative_config or not self.model_config.is_hybrid:
++            return
++
++        num_reqs = output_token_ids.shape[0]
++        num_accepted_tokens = output_token_ids.ne(-1).sum(dim=-1, dtype=torch.int64)
++        self.input_batch.num_accepted_tokens_cpu_tensor[:num_reqs].copy_(
++            num_accepted_tokens,
++            non_blocking=True,
++        )
++
++    def _copy_draft_token_ids_to_cpu(
++        self, scheduler_output: "SchedulerOutput", zeros_only: bool = False
++    ) -> None:
++        # Align draft-token req ids with the actual tensor rows produced by the
++        # drafter. In non-linear tree mode the active speculative subset can be
++        # smaller than the persistent input batch; copying all req_ids here
++        # causes the scheduler to pair zero/stale rows with unrelated requests
++        # on the next step.
++        if self.use_async_scheduling and not (
++            scheduler_output.has_structured_output_requests
++            or self.input_batch.sampling_metadata.output_token_ids
++        ):
++            return
++
++        draft_token_ids = self._draft_token_ids
++        if not torch.is_tensor(draft_token_ids):
++            self._draft_token_req_ids = self.input_batch.req_ids.copy()
++            return
++
++        num_reqs = draft_token_ids.shape[0]
++        active_spec_req_ids = [
++            req_id for req_id in self.input_batch.req_ids
++            if req_id in scheduler_output.scheduled_spec_decode_tokens
++        ]
++        if len(active_spec_req_ids) == num_reqs:
++            self._draft_token_req_ids = active_spec_req_ids
++        else:
++            self._draft_token_req_ids = self.input_batch.req_ids[:num_reqs].copy()
++
++        assert self.draft_token_ids_event is not None
++        assert self.draft_token_ids_copy_stream is not None
++        assert self.draft_token_ids_cpu is not None
++        default_stream = torch.npu.current_stream()
++        with torch.npu.stream(self.draft_token_ids_copy_stream):
++            if not zeros_only:
++                self.draft_token_ids_copy_stream.wait_stream(default_stream)
++                self.draft_token_ids_cpu[:num_reqs].copy_(
++                    draft_token_ids, non_blocking=True
++                )
++            else:
++                self.draft_token_ids_cpu[:num_reqs] = 0
++            self.draft_token_ids_event.record()
++        self._num_accepted_tokens_copy_event.record()
++        self._num_accepted_tokens_copy_pending = True
++
+     # TODO: remove this func after eagle_proposer is refactored and
+     #  _bookkeeping_sync is moved after propose_draft_token_ids
+     def _bookkeeping_sync(
+@@ -1725,8 +2142,17 @@ class NPUModelRunner(GPUModelRunner):
+         num_sampled_tokens = sampler_output.sampled_token_ids.shape[0]
+         sampled_token_ids = sampler_output.sampled_token_ids
+         logprobs_tensors = sampler_output.logprobs_tensors
++        if (
++            logprobs_tensors is not None
++            and sampled_token_ids.ndim > 1
++            and logprobs_tensors.logprob_token_ids.shape[0] != sampled_token_ids.numel()
++        ):
++            # Some speculative samplers (for example tree-based rejection) may
++            # only provide bonus-token logprobs, which cannot be filtered with
++            # the flattened valid-token mask used below.
++            logprobs_tensors = None
+         invalid_req_indices = []
+-        cu_num_tokens: list[int] | None = None
++        logprobs_lists = None
+         if not self.use_async_scheduling:
+             # Get the valid generated tokens.
+             max_gen_len = sampled_token_ids.shape[-1]
+@@ -1736,9 +2162,11 @@ class NPUModelRunner(GPUModelRunner):
+                 # Mask out the sampled tokens that should not be sampled.
+                 for i in discard_sampled_tokens_req_indices:
+                     valid_sampled_token_ids[int(i)].clear()
++                if logprobs_tensors is not None:
++                    logprobs_lists = logprobs_tensors.tolists()
+             else:
+                 # Includes spec decode tokens.
+-                valid_sampled_token_ids, cu_num_tokens = RejectionSampler.parse_output(
++                valid_sampled_token_ids, logprobs_lists = RejectionSampler.parse_output(
+                     sampled_token_ids,
+                     self.input_batch.vocab_size,
+                     discard_sampled_tokens_req_indices,
+@@ -1798,10 +2226,6 @@ class NPUModelRunner(GPUModelRunner):
+             req_state = self.requests[req_id]
+             req_state.output_token_ids.extend(sampled_ids)
+
+-        logprobs_lists = (logprobs_tensors.tolists(cu_num_tokens)
+-                          if not self.use_async_scheduling
+-                          and logprobs_tensors is not None else None)
+-
+         # Compute prompt logprobs if needed.
+         prompt_logprobs_dict = self._get_prompt_logprobs_dict(
+             hidden_states[:num_scheduled_tokens],
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/worker.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/worker.py
+index b1ccb74..37dd564 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/worker.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/worker/worker.py
+@@ -471,9 +471,20 @@ class NPUWorker(WorkerBase):
+         return self.model_runner.pin_lora(lora_id)
+
+     def execute_dummy_batch(self) -> None:
++        cudagraph_runtime_mode = None
++        speculative_config = getattr(self.model_runner, "speculative_config", None)
++        if (speculative_config is not None
++                and speculative_config.method == "dynamic_rl"):
++            # Dynamic RL can leave some DP replicas idle near the end of
++            # validation while others still decode the tail requests. Replaying
++            # or capturing full ACL graphs for these dummy batches has been
++            # unstable on Ascend and can deadlock the TP/HCCL path, so force the
++            # dummy batch onto the eager path.
++            cudagraph_runtime_mode = CUDAGraphMode.NONE
+         self.model_runner._dummy_run(
+             num_tokens=self.model_runner.decode_token_per_req,
+-            uniform_decode=True)
++            uniform_decode=True,
++            cudagraph_runtime_mode=cudagraph_runtime_mode)
+
+     def _init_worker_distributed_environment(self) -> None:
+         """Initialize the distributed environment."""

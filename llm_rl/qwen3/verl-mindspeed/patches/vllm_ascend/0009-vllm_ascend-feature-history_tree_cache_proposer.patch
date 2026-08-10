@@ -1,0 +1,1008 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: qiuzy3 <qiuzy3@users.noreply.github.com>
+Date: Mon, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add history tree cache and rollout proposer
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/interface.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/interface.py
+index 968f75b..84e4a37 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/interface.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/interface.py
+@@ -16,6 +16,8 @@ class SpecDcodeType(enum.Enum):
+     SUFFIX = 5
+     MEDUSA = 6
+     SAM = 7
++    HISTO = 8
++    DYNAMIC_RL = 9
+
+
+ class Proposer:
+@@ -52,4 +54,4 @@ class Proposer:
+                            hidden_states: torch.Tensor = None,
+                            aux_hidden_states: torch.Tensor = None):
+         """Called by execute_model in model_runner"""
+-        raise NotImplementedError
+\ No newline at end of file
++        raise NotImplementedError
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/global_module/prefix_tree.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/global_module/prefix_tree.py
+new file mode 100644
+index 0000000..4cf2b91
+--- /dev/null
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/global_module/prefix_tree.py
+@@ -0,0 +1,674 @@
++# Copyright 2025 Ziyi Qiu
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++import ray
++import zmq
++import math
++import msgpack
++import threading
++import hashlib
++from enum import Enum
++from concurrent.futures import ThreadPoolExecutor, as_completed
++
++
++def make_history_prompt_id(prompt_token_ids) -> str:
++    if prompt_token_ids is None:
++        return ""
++    normalized = [str(int(token_id)) for token_id in prompt_token_ids]
++    digest = hashlib.sha1(",".join(normalized).encode("utf-8")).hexdigest()
++    return digest
++
++def best_path_node(nodes):
++    best_child = None
++    best_token = None
++    max_reward = -math.inf
++    for node in nodes:
++        for key in node.children.keys():
++            if node.children[key].reward > max_reward:
++                best_token = key
++                best_child = node.children[key]
++    return best_token, best_child
++
++def best_path_nodes_topk(nodes, top_k=1):
++    """
++    Returns:
++        list: top_k (token, node, reward)
++    """
++    candidates = []
++
++    for node in nodes:
++        for key, child_node in node.children.items():
++            candidates.append((key, child_node, child_node.reward))
++
++    candidates.sort(key=lambda x: x[2], reverse=True)
++
++    return candidates[:top_k]
++
++class TrieNode:
++    def __init__(self):
++        self.children = {}
++        self.reward = 0
++
++    def best_child(self):
++        best_child = None
++        best_token = None
++        max_reward = -math.inf
++        for key in self.children.keys():
++            if self.children[key].reward > max_reward:
++                best_token = key
++                best_child = self.children[key]
++        return best_token, best_child
++
++    def clear(self):
++        self.children.clear()
++        self.reward = 0
++
++
++class CongestionState(Enum):
++    QUICK_START = 1
++    CONGESTION_AVOIDANCE = 2
++    SLOW_INCREASE = 3
++    STOP = 4
++
++class RewardAwareSuffixTree:
++    def __init__(self):
++        self.root = TrieNode()
++        self.subpath_index = {} # use tokens to represent nodes
++        self.state = CongestionState.QUICK_START
++        self.wnd_size: int = 8 # number of predicted tokens
++        self.ssthresh = 16
++        self.max_wnd = 28
++        self.spec_enable = True
++
++    def exist(self, path):
++        node = self.root
++        for char in path:
++            if char not in node.children:
++                return False
++            node = node.children[char]
++        return True
++
++    def add_node(self, path, reward):
++        """
++        :param path: List of token
++        :param reward: reward score
++        """
++        if not path:
++            return
++        node = self.root
++        for char in path:
++            if char not in node.children:
++                node.children[char] = TrieNode()
++                if char not in self.subpath_index:
++                    self.subpath_index[char] = [node.children[char]]
++                else:
++                    self.subpath_index[char].append(node.children[char])
++            node = node.children[char]
++            node.reward += reward
++
++    def find_path_nodes(self, prefix: list) -> list:
++        """
++        Fast search path. Prefix may not start from root
++        """
++        if not prefix:
++            return []
++
++        first_element = prefix[0]
++        if first_element not in self.subpath_index:
++            return []
++
++        start_nodes = self.subpath_index[first_element]
++        match_nodes = []
++
++        # O(N_starts * L) where N_starts is the number of starting nodes and L is prefix length
++        for start_node in start_nodes:
++            current_node = start_node
++            match_length = 1
++            for element in prefix[1:]:
++                if element in current_node.children:
++                    current_node = current_node.children[element]
++                    match_length += 1
++                else:
++                    break
++            if match_length == len(prefix):
++                match_nodes.append(current_node)
++
++        return match_nodes
++
++    def update_wnd_size(self):
++        if self.state == CongestionState.QUICK_START:
++            self.wnd_size = min(self.wnd_size * 2, self.ssthresh)
++            if self.wnd_size == self.ssthresh:
++                self.state = CongestionState.SLOW_INCREASE
++        elif self.state == CongestionState.CONGESTION_AVOIDANCE:
++            self.wnd_size = max(self.wnd_size // 2, 2)
++        elif self.state == CongestionState.SLOW_INCREASE:
++            self.wnd_size = min(self.wnd_size + 1, self.max_wnd)
++        elif self.state == CongestionState.STOP:
++            self.spec_enable = False
++
++    def predict(self, prefix, accept_length=1):
++        if not self.spec_enable:
++            return []
++
++        predicted_tokens = []
++        predict_limit = max(1, min(self.wnd_size, self.max_wnd))
++
++        matched_nodes = self.find_path_nodes(prefix)
++        next_token, next_node = best_path_node(matched_nodes)
++        if next_token:
++            predicted_tokens.append(next_token)
++            for i in range(predict_limit - 1):
++                next_token, next_node = next_node.best_child()
++                if next_token:
++                    predicted_tokens.append(next_token)
++                else:
++                    break
++
++        return predicted_tokens
++
++    def predict_topk(self, prefix, accept_length=1, top_k=1):
++        if not self.spec_enable:
++            return []
++
++        result = []
++        predicted_tokens = []
++        predict_limit = max(1, min(self.wnd_size, self.max_wnd))
++
++        matched_nodes = self.find_path_nodes(prefix)
++        topk_candidates = best_path_nodes_topk(matched_nodes, top_k=top_k)
++        for next_token, next_node, _ in topk_candidates:
++            if next_token:
++                predicted_tokens.append(next_token)
++                for i in range(predict_limit - 1):
++                    next_token, next_node = next_node.best_child()
++                    if next_token:
++                        predicted_tokens.append(next_token)
++                    else:
++                        break
++            if len(predicted_tokens) > 0:
++                result.append(predicted_tokens)
++            predicted_tokens = []
++        return result
++
++    def clear(self):
++        self.root.clear()
++        self.subpath_index.clear()
++
++    def compare_tree_predict_with_best(self, seq):
++        def compare_spec_and_ori(position, predicted_tokens, seq):
++            if not predicted_tokens or position >= len(seq) or predicted_tokens[0] != seq[position]:
++                return 1
++            accept_length = 1
++            for i in range(len(predicted_tokens)):
++                if position + i < len(seq) and predicted_tokens[i] == seq[position + i]:
++                    accept_length += 1
++                else:
++                    break
++            return accept_length
++
++        self.spec_enable = True
++
++        self.state = CongestionState.QUICK_START
++        self.wnd_size: int = 4
++        best_predict_num = 0
++        best_predict_token_num = []
++        generated_token_num = 2
++        accept_length = 1
++        while generated_token_num < len(seq):
++            predicted_tokens = self.predict(seq[generated_token_num-2:generated_token_num], accept_length)
++            accept_length = compare_spec_and_ori(generated_token_num, predicted_tokens, seq)
++            generated_token_num += accept_length
++            best_predict_num += 1
++            best_predict_token_num.append(accept_length - 1)
++
++        self.state = CongestionState.QUICK_START
++        self.wnd_size: int = 4
++        tree_predict_num = 0
++        tree_predict_token_num = []
++        generated_token_num = 2
++        accept_length_max = 1
++        while generated_token_num < len(seq):
++            predicted_token_list = self.predict_topk(seq[generated_token_num-2:generated_token_num], accept_length_max, 4)
++            accept_length_max = 1
++            for predicted_tokens in predicted_token_list:
++                accept_length = compare_spec_and_ori(generated_token_num, predicted_tokens, seq)
++                if accept_length > accept_length_max:
++                    accept_length_max = accept_length
++            generated_token_num += accept_length_max
++            tree_predict_num += 1
++            tree_predict_token_num.append(accept_length_max - 1)
++        tree_predict_num = len(seq)
++        return best_predict_num, best_predict_token_num, tree_predict_num, tree_predict_token_num
++
++@ray.remote(num_cpus=8, max_concurrency=8)
++class SuffixTreeGroup:
++    def __init__(self, port: int = 5555):
++        self._dict: dict[str, dict[str, RewardAwareSuffixTree]] = {}
++        self.predict_times = 0
++        self.effective_times = 0
++        self.total_right_length = 0
++        self.port = port
++        self._lock = threading.Lock()
++
++    def _get_namespace_dict(self, namespace: str):
++        if namespace not in self._dict:
++            self._dict[namespace] = {}
++        return self._dict[namespace]
++
++    def __len__(self):
++        return sum(len(namespace_dict) for namespace_dict in self._dict.values())
++
++    def add_tree(self, prompt_id, namespace="active"):
++        with self._lock:
++            namespace_dict = self._get_namespace_dict(namespace)
++            if prompt_id in namespace_dict:
++                return
++            namespace_dict[prompt_id] = RewardAwareSuffixTree()
++
++    def tree_append_node(self, prompt_id, seq, reward, namespace="active"):
++        namespace_dict = self._get_namespace_dict(namespace)
++        if prompt_id not in namespace_dict:
++            raise ValueError(f"{prompt_id} not in GlobalRewardAwareSuffixTreeGroup")
++        else:
++            with self._lock:
++                namespace_dict[prompt_id].add_node(seq, reward)
++
++    def upsert_tree_append_node(self, prompt_id, seq, reward, namespace="active"):
++        with self._lock:
++            namespace_dict = self._get_namespace_dict(namespace)
++            if prompt_id not in namespace_dict:
++                namespace_dict[prompt_id] = RewardAwareSuffixTree()
++            namespace_dict[prompt_id].add_node(seq, reward)
++
++    def _predict(self, prompt_id, prefix, accept_length, namespace="active"):
++        with self._lock:
++            self.predict_times += 1
++            if accept_length > 1:
++                self.effective_times += 1
++            self.total_right_length += (accept_length - 1)
++        return self._get_namespace_dict(namespace)[prompt_id].predict(prefix, accept_length)
++
++    def predict(self, prompt_id, prefix, accept_length, namespace="active"):
++        namespace_dict = self._get_namespace_dict(namespace)
++        if (not prompt_id in namespace_dict) or (not prefix):
++            return []
++        else:
++            return self._predict(prompt_id, prefix, accept_length, namespace)
++
++    def predict_batch(self, prompt_id_list, prefix_list, accept_length_list, namespace="active"):
++        result = []
++        namespace_dict = self._get_namespace_dict(namespace)
++        predict_times_delta = 0
++        effective_times_delta = 0
++        total_right_length_delta = 0
++        for i in range(len(prompt_id_list)):
++            prompt_id = prompt_id_list[i]
++            if (not prompt_id in namespace_dict) or (not prefix_list[i]):
++                result.append([])
++            else:
++                predict_times_delta += 1
++                if accept_length_list[i] > 1:
++                    effective_times_delta += 1
++                total_right_length_delta += (accept_length_list[i] - 1)
++                result.append(namespace_dict[prompt_id].predict(prefix_list[i], accept_length_list[i]))
++        if predict_times_delta:
++            with self._lock:
++                self.predict_times += predict_times_delta
++                self.effective_times += effective_times_delta
++                self.total_right_length += total_right_length_delta
++        return result
++
++    def set(self, key, value, namespace="active"):
++        with self._lock:
++            self._get_namespace_dict(namespace)[key] = value
++
++    def get(self, key, default=None, namespace="active"):
++        return self._get_namespace_dict(namespace).get(key, default)
++
++    def exist(self, key, namespace="active"):
++        return key in self._get_namespace_dict(namespace)
++
++    def get_prompt_ids(self, namespace="active"):
++        return list(self._get_namespace_dict(namespace).keys())
++
++    def delete(self, key, namespace="active"):
++        with self._lock:
++            namespace_dict = self._get_namespace_dict(namespace)
++            if key in namespace_dict:
++                del namespace_dict[key]
++
++    def reset_tree(self, prompt_id, namespace="active"):
++        with self._lock:
++            namespace_dict = self._get_namespace_dict(namespace)
++            if prompt_id in namespace_dict:
++                del namespace_dict[prompt_id]
++            namespace_dict[prompt_id] = RewardAwareSuffixTree()
++
++    def promote_namespace(self, src_namespace="staging", dst_namespace="active"):
++        with self._lock:
++            src_dict = self._dict.get(src_namespace, {})
++            self._dict[dst_namespace] = dict(src_dict)
++            self._dict[src_namespace] = {}
++
++    def compute_metrics(self):
++        return {
++            'effective_times': self.effective_times,
++            'predict_times': self.predict_times,
++            'total_right_length': self.total_right_length,
++        }
++
++    def clear(self, namespace=None):
++        with self._lock:
++            if namespace is None:
++                self._dict.clear()
++                self.predict_times = 0
++                self.effective_times = 0
++                self.total_right_length = 0
++            else:
++                self._dict[namespace] = {}
++
++    def run(self):
++        context = zmq.Context()
++        socket = context.socket(zmq.REP)
++        socket.bind(f"tcp://*:{self.port}")
++
++        self.running = True
++
++        while self.running:
++            try:
++                message = socket.recv()
++                request = msgpack.unpackb(message)
++
++                response = self._handle_request(request)
++
++                socket.send(msgpack.packb(response))
++            except Exception as e:
++                error_response = {
++                    'status': 'error',
++                    'message': str(e)
++                }
++                socket.send(msgpack.packb(error_response))
++
++    def _handle_request(self, request):
++        method = request['method']
++        params = request['params']
++
++        if method == 'predict':
++            return self.predict(
++                params['prompt_id'],
++                params['prefix'],
++                params['accept_length'],
++                params.get('namespace', 'active'),
++            )
++        elif method == 'predict_batch':
++            return self.predict_batch(
++                params['prompt_id_list'],
++                params['prefix_list'],
++                params['accept_length_list'],
++                params.get('namespace', 'active'),
++            )
++        elif method == 'batch':
++            return [self._handle_request(req) for req in params['requests']]
++        elif method == 'stop':
++            self.running = False
++            return True
++        else:
++            return {'error': f'Unknown method: {method}'}
++
++    def compare_tree_predict_with_best(self, prompt_id, seq, namespace="active"):
++        namespace_dict = self._get_namespace_dict(namespace)
++        if prompt_id not in namespace_dict:
++            return {}
++        else:
++            return {prompt_id: namespace_dict[prompt_id].compare_tree_predict_with_best(seq)}
++
++_num_groups: int = 4 # fixed
++history_tree_handle = []
++class GlobalRewardAwareSuffixTreeGroup:
++    """
++    All functions are non-blocking, return futures.
++    """
++    def __init__(self, namespace="active"):
++        self.groups = []
++        self.prompt_ids = set()
++        self.namespace = namespace
++        for i in range(_num_groups):
++            try:
++                actor_handle = ray.get_actor(f"global_tree_{i}")
++                self.groups.append(actor_handle)
++            except ValueError:
++                continue
++
++    def update_prompt_ids(self):
++        prompt_ids = []
++        for actor_handle in self.groups:
++            prompt_ids.extend(ray.get(actor_handle.get_prompt_ids.remote(self.namespace)))
++        self.prompt_ids = set(prompt_ids)
++
++    def __len__(self):
++        return len(self.groups)
++
++    def _get_partition_id(self, prompt_id: str):
++        if not prompt_id:
++            return 0
++        try:
++            return int(prompt_id[:16], 16) % _num_groups
++        except ValueError:
++            digest = hashlib.sha1(prompt_id.encode("utf-8")).hexdigest()
++            return int(digest[:16], 16) % _num_groups
++
++    def _get_partition(self, prompt_id: str):
++        return self.groups[self._get_partition_id(prompt_id)]
++
++    def add_tree(self, prompt_id):
++        actor = self._get_partition(prompt_id)
++        return actor.add_tree.remote(prompt_id, self.namespace)
++
++    def tree_append_node(self, prompt_id, seq, reward):
++        actor = self._get_partition(prompt_id)
++        return actor.tree_append_node.remote(prompt_id, seq, reward, self.namespace)
++
++    def upsert_tree_append_node(self, prompt_id, seq, reward):
++        actor = self._get_partition(prompt_id)
++        return actor.upsert_tree_append_node.remote(prompt_id, seq, reward, self.namespace)
++
++    def predict(self, prompt_id, prefix, accept_length):
++        actor = self._get_partition(prompt_id)
++        return actor.predict.remote(prompt_id, prefix, accept_length, self.namespace)
++
++    def predict_batch(self, prompt_id_list, sampled_token_list, prefix_length_list, accept_length_list):
++        position_id = []
++        params = [{
++            'prompt_id_list': [],
++            'prefix_list': [],
++            'accept_length_list': [],
++        } for _ in range(_num_groups)]
++        draft_token_list = [[] for _ in range(_num_groups)]
++        for i in range(len(prompt_id_list)):
++            partition_id = self._get_partition_id(prompt_id_list[i])
++            params[partition_id]['prompt_id_list'].append(prompt_id_list[i])
++            if len(sampled_token_list[i]) < prefix_length_list[i]:
++                params[partition_id]['prefix_list'].append([])
++            else:
++                params[partition_id]['prefix_list'].append(sampled_token_list[i][-prefix_length_list[i]:])
++            params[partition_id]['accept_length_list'].append(accept_length_list[i])
++            position_id.append(partition_id)
++
++        active_group_ids = [
++            i for i in range(_num_groups) if params[i]['prompt_id_list']
++        ]
++        if active_group_ids:
++            draft_refs = [
++                self.groups[i].predict_batch.remote(
++                    params[i]['prompt_id_list'],
++                    params[i]['prefix_list'],
++                    params[i]['accept_length_list'],
++                    self.namespace,
++                ) for i in active_group_ids
++            ]
++            draft_results = ray.get(draft_refs)
++            for group_id, group_result in zip(active_group_ids, draft_results):
++                draft_token_list[group_id] = group_result
++
++        iter_list = [iter(draft_tokens) for draft_tokens in draft_token_list]
++        result = []
++        for i in range(len(prompt_id_list)):
++            result.append(next(iter_list[position_id[i]]))
++        return result
++
++    def delete(self, prompt_id):
++        actor = self._get_partition(prompt_id)
++        return actor.delete.remote(prompt_id, self.namespace)
++
++    def reset_tree(self, prompt_id):
++        actor = self._get_partition(prompt_id)
++        return actor.reset_tree.remote(prompt_id, self.namespace)
++
++    def compare_tree_predict_with_best(self, prompt_id, seq):
++        actor = self._get_partition(prompt_id)
++        return actor.compare_tree_predict_with_best.remote(prompt_id, seq, self.namespace)
++
++    def exist(self, prompt_id):
++        actor = self._get_partition(prompt_id)
++        return actor.exist.remote(prompt_id, self.namespace)
++
++    def clear(self):
++        return [p.clear.remote(self.namespace) for p in self.groups]
++
++    def promote_from_namespace(self, src_namespace):
++        return [p.promote_namespace.remote(src_namespace, self.namespace) for p in self.groups]
++
++    def compute_metrics(self):
++        tasks = [group.compute_metrics.remote() for group in self.groups]
++        metrics_list = ray.get(tasks)
++        data = {}
++        for key in metrics_list[0].keys():
++            data[key] = sum([metrics[key] for metrics in metrics_list])
++        effective_percent = data['effective_times'] / data['predict_times'] if data['predict_times'] != 0 \
++                                else 0
++        effective_length = data['total_right_length'] / data['effective_times'] if data['effective_times'] != 0 \
++                                else 0
++        res = {
++            'speculative_decoding/effective_percent': effective_percent,
++            'speculative_decoding/effective_length': effective_length,
++            'speculative_decoding/predict_times': data['predict_times'],
++            'speculative_decoding/effective_times': data['effective_times'],
++            'speculative_decoding/total_right_length': data['total_right_length'],
++        }
++        return res
++
++    def _setup_connections(self):
++        self.servers = {}
++        for server_id, config in self.server_configs.items():
++            socket = zmq.Context().socket(zmq.REQ)
++            socket.setsockopt(zmq.RCVTIMEO, config.get('timeout', 5000))
++            server_url = f"tcp://{config['host']}:{config['port']}"
++            socket.connect(server_url)
++            self.servers[server_id] = {
++                'socket': socket,
++                'config': config,
++                'url': server_url
++            }
++
++    def post_to_server(self, server_id, request):
++        if server_id not in self.servers:
++            return {'status': 'error', 'message': f'Unknown server: {server_id}'}
++
++        socket = self.servers[server_id]['socket']
++
++        try:
++            request_json = msgpack.packb(request)
++            socket.send(request_json)
++            response = socket.recv()
++            return msgpack.unpackb(response)
++        except Exception as e:
++            return RuntimeError({
++                'status': 'error',
++                'message': f'Communication error: {str(e)}'
++            })
++
++    def post_to_all(self, request):
++        return self._dispatch_parallel({
++            server_id: request
++            for server_id in self.servers
++        })
++
++    def post_broadcast(self, requests):
++        return self._dispatch_parallel(requests)
++
++    def _dispatch_parallel(self, requests):
++        results = {}
++        n = len(requests)
++
++        with ThreadPoolExecutor(max_workers=n) as executor:
++            futures = {
++                executor.submit(self.post_to_server, server_id, request): server_id
++                for server_id, request in requests.items()
++            }
++
++            for future in as_completed(futures):
++                server_id = futures[future]
++                try:
++                    results[server_id] = future.result()
++                except Exception as e:
++                    results[server_id] = {'status': 'error', 'message': str(e)}
++
++        return results
++
++    def post_predict_batch(self, prompt_id_list, sampled_token_list, prefix_length_list, accept_length_list):
++        position_id = []
++        params = {
++            server_id: {
++                'prompt_id_list': [],
++                'prefix_list': [],
++                'accept_length_list': [],
++            } for server_id in range(_num_groups)}
++        draft_token_list = [None for _ in range(_num_groups)]
++        for i in range(len(prompt_id_list)):
++            partition_id = self._get_partition_id(prompt_id_list[i])
++            params[partition_id]['prompt_id_list'].append(prompt_id_list[i])
++            if len(sampled_token_list[i]) < prefix_length_list[i]:
++                params[partition_id]['prefix_list'].append([])
++            else:
++                params[partition_id]['prefix_list'].append(sampled_token_list[i][-prefix_length_list[i]:])
++            params[partition_id]['accept_length_list'].append(accept_length_list[i])
++            position_id.append(partition_id)
++        response = self.post_broadcast({
++            i: {'method': 'predict_batch', 'params': params[i]} for i in range(_num_groups)
++        })
++        draft_token_list = []
++        for i in range(_num_groups):
++            draft_token_list.append(response[i])
++
++        iter_list = [iter(draft_tokens) for draft_tokens in draft_token_list]
++        result = []
++        for i in range(len(prompt_id_list)):
++            result.append(next(iter_list[position_id[i]]))
++        return result
++
++    def run_server(self):
++        return [p.run.remote() for p in self.groups]
++
++    def stop_server(self):
++        return self.post_to_all({'method': 'stop', 'params': {}})
++
++def init_history_trees():
++    global history_tree_handle
++    for i in range(_num_groups):
++        actor_handle = SuffixTreeGroup.options(name=f"global_tree_{i}").remote(port=5555+i)
++        history_tree_handle.append(actor_handle)
++
++def get_history_trees(namespace="active"):
++    history_trees = GlobalRewardAwareSuffixTreeGroup(namespace=namespace)
++    return history_trees
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/history_rollout.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/history_rollout.py
+new file mode 100644
+index 0000000..505374d
+--- /dev/null
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/history_rollout.py
+@@ -0,0 +1,297 @@
++import os
++import threading
++import torch
++import numpy as np
++from typing import Optional
++from vllm.config import CUDAGraphMode, VllmConfig
++from vllm.v1.core.sched.output import SchedulerOutput
++from vllm.v1.sample.metadata import SamplingMetadata
++from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
++from vllm_ascend.spec_decode.interface import Proposer, SpecDcodeType
++from vllm_ascend.spec_decode.global_module.prefix_tree import make_history_prompt_id
++
++
++class FixedDraftHistoryCache:
++    def __init__(self, draft_len: int):
++        self.draft_len = draft_len
++        self.prefix_len = 2
++        self._cache: dict[str, dict[tuple[int, int], tuple[float, int, tuple[int, ...]]]] = {}
++        self._global_cache: dict[tuple[int, int], tuple[float, int, tuple[int, ...]]] = {}
++        self._lock = threading.Lock()
++
++    def clear(self) -> None:
++        with self._lock:
++            self._cache.clear()
++            self._global_cache.clear()
++
++    def update_records(self, records: list[dict], normalize_token_list) -> int:
++        if not records:
++            return 0
++
++        updated = 0
++        with self._lock:
++            for record in records:
++                prompt_id = str(record.get("prompt_id", ""))
++                if not prompt_id:
++                    continue
++
++                response_token_ids = normalize_token_list(
++                    record.get("response_token_ids"))
++                if len(response_token_ids) <= self.prefix_len:
++                    continue
++
++                try:
++                    reward = float(record.get("reward", 0.0))
++                except (TypeError, ValueError):
++                    reward = 0.0
++
++                prompt_cache = self._cache.setdefault(prompt_id, {})
++                max_start = len(response_token_ids) - self.prefix_len
++                for start in range(max_start):
++                    prefix = tuple(
++                        response_token_ids[start:start + self.prefix_len])
++                    draft = tuple(
++                        response_token_ids[start + self.prefix_len:start +
++                                           self.prefix_len + self.draft_len])
++                    if len(draft) != self.draft_len:
++                        continue
++
++                    prev = prompt_cache.get(prefix)
++                    candidate = (reward, len(draft), draft)
++                    if prev is None or candidate[:2] > prev[:2]:
++                        prompt_cache[prefix] = candidate
++                        updated += 1
++
++                    global_prev = self._global_cache.get(prefix)
++                    if global_prev is None or candidate[:2] > global_prev[:2]:
++                        self._global_cache[prefix] = candidate
++        return updated
++
++    def predict_batch(self, prompt_id_list: list[str],
++                      sampled_token_id_list: list[list[int]]) -> list[list[int]]:
++        if not prompt_id_list:
++            return []
++
++        result = []
++        with self._lock:
++            for prompt_id, sampled_ids in zip(prompt_id_list,
++                                              sampled_token_id_list):
++                if len(sampled_ids) < self.prefix_len:
++                    result.append([])
++                    continue
++                prompt_cache = self._cache.get(prompt_id)
++                prefix = tuple(sampled_ids[-self.prefix_len:])
++                candidate = None
++                if prompt_cache is not None:
++                    candidate = prompt_cache.get(prefix)
++                if candidate is None:
++                    candidate = self._global_cache.get(prefix)
++                result.append(list(candidate[2]) if candidate else [])
++        return result
++
++class HistoryRolloutProposer(Proposer):
++    def __init__(self, vllm_config, device, runner):
++        self.name = SpecDcodeType.HISTO
++        self.device = device
++        self.runner = runner
++        self.num_speculative_tokens = vllm_config.speculative_config.num_speculative_tokens
++        self.vocab_size = vllm_config.model_config.get_vocab_size()
++
++        # Minimum length of the HistoryRolloutTree to match.
++        self.min_n = 2
++        # Maximum length of the HistoryRolloutTree to match.
++        self.max_n = vllm_config.speculative_config.prompt_lookup_max
++        self.prompt_lookup = vllm_config.speculative_config.prompt_lookup_max
++        self.history_cache = FixedDraftHistoryCache(
++            draft_len=self.num_speculative_tokens)
++        self.max_spec_reqs = int(
++            os.getenv("VLLM_HISTORY_TREE_MAX_SPEC_REQS", "64"))
++        self._predict_times = 0
++        self._effective_times = 0
++        self._total_right_length = 0
++
++    def _normalize_token(self, token) -> Optional[int]:
++        if isinstance(token, torch.Tensor):
++            if token.numel() != 1:
++                return None
++            token = token.item()
++        elif isinstance(token, np.generic):
++            token = token.item()
++
++        try:
++            token = int(token)
++        except (TypeError, ValueError):
++            return None
++
++        if token < 0 or token >= self.vocab_size:
++            return None
++        return token
++
++    def _normalize_token_list(self, tokens) -> list[int]:
++        if tokens is None:
++            return []
++
++        normalized = []
++        for token in tokens:
++            normalized_token = self._normalize_token(token)
++            if normalized_token is None:
++                break
++            normalized.append(normalized_token)
++            if len(normalized) >= self.num_speculative_tokens:
++                break
++        return normalized
++
++    def _normalize_history_record_token_list(self, tokens) -> list[int]:
++        if tokens is None:
++            return []
++
++        normalized = []
++        for token in tokens:
++            normalized_token = self._normalize_token(token)
++            if normalized_token is None:
++                break
++            normalized.append(normalized_token)
++        return normalized
++
++    def _normalize_batch_draft_tokens(self, batch_draft_tokens, batch_size: int) -> list[list[int]]:
++        if batch_draft_tokens is None:
++            return [[] for _ in range(batch_size)]
++
++        normalized_batch = []
++        for i in range(batch_size):
++            if i >= len(batch_draft_tokens):
++                normalized_batch.append([])
++            else:
++                normalized_batch.append(
++                    self._normalize_token_list(batch_draft_tokens[i]))
++        return normalized_batch
++
++    def reset_history_cache(self) -> None:
++        self.history_cache.clear()
++
++    def sync_records(self, records: list[dict]) -> int:
++        updated = self.history_cache.update_records(
++            records,
++            self._normalize_history_record_token_list,
++        )
++        return updated
++
++    def get_metrics(self, reset: bool = False) -> dict[str, float]:
++        predict_times = self._predict_times
++        effective_times = self._effective_times
++        total_right_length = self._total_right_length
++        if reset:
++            self._predict_times = 0
++            self._effective_times = 0
++            self._total_right_length = 0
++        return {
++            "predict_times": float(predict_times),
++            "effective_times": float(effective_times),
++            "total_right_length": float(total_right_length),
++        }
++
++    def propose(
++        self,
++        accept_length: int,
++        sampled_token_ids: list[int],
++        prompt_token_ids: list[int],
++        *,
++        count_metrics: bool = True,
++    ) -> Optional[np.ndarray]:
++        """Proposes the next sequence of tokens based on history rollout
++        speculative decoding pattern.
++        """
++        prompt_id = make_history_prompt_id(prompt_token_ids)
++        if len(sampled_token_ids) < self.min_n:
++            return []
++        draft_tokens = self.history_cache.predict_batch(
++            [prompt_id], [sampled_token_ids])
++        draft_tokens = self._normalize_token_list(
++            draft_tokens[0] if draft_tokens else [])
++        if count_metrics and draft_tokens:
++            self._predict_times += 1
++            if accept_length > 1:
++                self._effective_times += 1
++                self._total_right_length += (accept_length - 1)
++        return draft_tokens
++
++    def propose_batch(
++        self,
++        accept_length_list: list[int],
++        sampled_token_id_list: list[list[int]],
++        prompt_token_id_list: list[list[int]],
++        *,
++        count_metrics: bool = True,
++    ) -> Optional[np.ndarray]:
++        """Proposes the next sequence of tokens based on history rollout
++        speculative decoding pattern.
++        """
++        batch_size = len(accept_length_list)
++        if self.max_spec_reqs > 0 and batch_size > self.max_spec_reqs:
++            return [[] for _ in range(batch_size)]
++
++        normalized_batch = [[] for _ in range(batch_size)]
++        eligible_indices = []
++        eligible_prompt_ids = []
++        eligible_sampled_token_ids = []
++        for i in range(batch_size):
++            sampled_ids = sampled_token_id_list[i]
++            if len(sampled_ids) < self.min_n:
++                continue
++            prompt_token_ids = prompt_token_id_list[i]
++            if not prompt_token_ids:
++                continue
++            eligible_indices.append(i)
++            eligible_prompt_ids.append(make_history_prompt_id(prompt_token_ids))
++            eligible_sampled_token_ids.append(sampled_ids)
++
++        if eligible_indices:
++            batch_draft_tokens = self.history_cache.predict_batch(
++                eligible_prompt_ids,
++                eligible_sampled_token_ids,
++            )
++            normalized_eligible_batch = self._normalize_batch_draft_tokens(
++                batch_draft_tokens, len(eligible_indices))
++            for dst_idx, draft_tokens in zip(eligible_indices,
++                                             normalized_eligible_batch):
++                normalized_batch[dst_idx] = draft_tokens
++            if count_metrics:
++                for local_idx, draft_tokens in enumerate(normalized_eligible_batch):
++                    if not draft_tokens:
++                        continue
++                    self._predict_times += 1
++                    accept_length = int(accept_length_list[eligible_indices[local_idx]])
++                    if accept_length > 1:
++                        self._effective_times += 1
++                        self._total_right_length += (accept_length - 1)
++
++        return normalized_batch
++
++    def load_model(self, model):
++        # No model to load.
++        pass
++
++    @torch.inference_mode()
++    def dummy_run(self,
++                  num_tokens: int,
++                  with_prefill: bool = False,
++                  in_graph_capturing: bool = False,
++                  num_reqs: int = 0,
++                  num_tokens_across_dp: Optional[torch.Tensor] = None,
++                  aclgraph_runtime_mode: CUDAGraphMode = CUDAGraphMode.NONE,
++                  batch_descriptor=None,
++                  dummy_compute_logits=lambda hidden_states: None,
++                  is_profile=False):
++        pass
++
++    def generate_token_ids(self,
++                           valid_sampled_token_ids: list[list[int]],
++                           sampling_metadata: SamplingMetadata = None,
++                           scheduler_output: SchedulerOutput = None,
++                           spec_decode_metadata: SpecDecodeMetadata = None,
++                           positions: torch.Tensor = None,
++                           num_scheduled_tokens: int = 0,
++                           hidden_states: torch.Tensor = None,
++                           attn_metadata=None,
++                           aux_hidden_states: torch.Tensor = None):
++        return [[] for _ in range(len(valid_sampled_token_ids))]

@@ -1,0 +1,561 @@
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/config/speculative.py b/llm_rl/qwen3/verl-mindspeed/vllm/config/speculative.py
+index cd4cced..0a9f13b 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/config/speculative.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/config/speculative.py
+@@ -14,6 +14,7 @@ from vllm.config.utils import config
+ from vllm.logger import init_logger
+ from vllm.utils.hashing import safe_hash
+ from vllm.utils.import_utils import LazyLoader, has_arctic_inference
++from vllm.v1.spec_decode.tree_draft_params import TreeDrafterParams
+
+ if TYPE_CHECKING:
+     from transformers import PretrainedConfig
+@@ -48,6 +49,8 @@ SpeculativeMethod = Literal[
+     "suffix",
+     "sam",
+     EagleModelTypes,
++    "history_tree",
++    "dynamic_rl",
+ ]
+
+
+@@ -112,9 +115,6 @@ class SpeculativeConfig:
+     """Minimum size of ngram token window when using Ngram proposer, if
+     provided. Defaults to 1."""
+
+-    speculative_token_tree: str | None = None
+-    """Specifies the tree structure for speculative token generation.
+-    """
+     # required configuration params passed from engine
+     target_model_config: SkipValidation[ModelConfig] = None  # type: ignore
+     """The configuration of the target model."""
+@@ -148,6 +148,36 @@ class SpeculativeConfig:
+     tokens with estimated probability (based on frequency counts) greater than
+     or equal to this value."""
+
++    use_tree_spec_decode: bool = False
++    """Whether to use tree speculative decoding. If set to True, will use tree
++    speculative decoding instead of the default greedy speculative decoding."""
++    tree_topk: int = 2
++    """The top-k value for tree speculative decoding. Only takes effect when
++    use_tree_spec_decode is True or speculative_token_tree is provided."""
++    speculative_token_tree: str | None = None
++    """The tree structure for speculative decoding, represented as a string of a list of tuples.
++    For example, "[1, 2]" represents a binary tree with depth 2."""
++    tree_drafter_params: TreeDrafterParams | None = None
++
++    def init_tree_drafter_params(self):
++        spec_token_tree = self.speculative_token_tree
++        if spec_token_tree is None:
++            if self.use_tree_spec_decode:
++                raise ValueError("speculative_token_tree is required when use_tree_spec_decode is enabled")
++            return
++
++        self.tree_drafter_params = \
++            TreeDrafterParams.from_spec_token_tree(spec_token_tree)
++        num_tree_drafts = len(self.tree_drafter_params.draft_nodes)
++        if self.num_speculative_tokens != num_tree_drafts:
++            logger.warning(
++                "Overriding num_speculative_tokens from %s to %s to "
++                "match speculative_token_tree size.",
++                self.num_speculative_tokens,
++                num_tree_drafts,
++            )
++            self.num_speculative_tokens = num_tree_drafts
++
+     def compute_hash(self) -> str:
+         """
+         WARNING: Whenever a new field is added to this config,
+@@ -163,7 +191,7 @@ class SpeculativeConfig:
+         factors: list[Any] = []
+         # Eagle3 affects the computation graph because it returns intermediate
+         # hidden states in addition to the final hidden state.
+-        factors.append(self.method == "eagle3")
++        factors.append(self.method == "eagle3" or self.method == "dynamic_rl")
+         hash_str = safe_hash(str(factors).encode(), usedforsecurity=False).hexdigest()
+         return hash_str
+
+@@ -277,11 +305,16 @@ class SpeculativeConfig:
+                 self.model = "suffix"
+             elif self.method == "sam":
+                 self.model = "sam"
++            elif self.method in ("history_tree", "[history_tree]"):
++                self.model = "history_tree"
++            elif self.method == "dynamic_rl":
++                self.model = "dynamic_rl"
+             else:
+                 raise ValueError(
+                     "num_speculative_tokens was provided but without speculative model."
+                 )
+
++        self.init_tree_drafter_params()
+         # Automatically configure the method for ngram when "model" is used
+         # instead of "method"
+         if self.method is None and (
+@@ -326,6 +359,9 @@ class SpeculativeConfig:
+             self.draft_parallel_config = self.target_parallel_config
+         elif self.method == "suffix":
+             self._validate_suffix_decoding()
++        elif self.method == "history_tree":
++            self.prompt_lookup_max = 4
++            self.prompt_lookup_min = 2
+         else:
+             self.prompt_lookup_max = 0
+             self.prompt_lookup_min = 0
+@@ -353,7 +389,7 @@ class SpeculativeConfig:
+                 )
+
+                 # Automatically detect the method
+-                if self.method in ("eagle", "eagle3"):
++                if self.method in ("eagle", "eagle3", "dynamic_rl"):
+                     pass
+                 # examples:
+                 # yuhuili/EAGLE-LLaMA3-Instruct-8B
+@@ -397,7 +433,7 @@ class SpeculativeConfig:
+                     )
+
+                 # Replace hf_config for EAGLE draft_model
+-                if self.method in ("eagle", "eagle3"):
++                if self.method in ("eagle", "eagle3", "dynamic_rl"):
+                     from vllm.transformers_utils.configs import SpeculatorsConfig
+                     from vllm.transformers_utils.configs.eagle import EAGLEConfig
+
+@@ -407,9 +443,12 @@ class SpeculativeConfig:
+                     ):
+                         pass
+                     else:
++                        eagle_method = (
++                            "eagle3" if self.method == "dynamic_rl" else self.method
++                        )
+                         eagle_config = EAGLEConfig(
+                             self.draft_model_config.hf_config,
+-                            method=self.method,
++                            method=eagle_method,
+                             model_type="eagle",
+                         )
+                         self.draft_model_config.hf_config = eagle_config
+@@ -441,12 +480,7 @@ class SpeculativeConfig:
+                             f" must be divisible by {n_predict=}"
+                         )
+
+-                if self.speculative_token_tree is None:
+-                    # Generate chain of tokens.
+-                    self.speculative_token_tree = str(
+-                        [(i + 1) * (0,) for i in range(self.num_speculative_tokens)]
+-                    )
+-                else:
++                if self.speculative_token_tree is not None:
+                     # Sort the token tree breadth-first.
+                     tree_choices = ast.literal_eval(self.speculative_token_tree)
+                     self.speculative_token_tree = str(
+@@ -650,10 +684,10 @@ class SpeculativeConfig:
+         return self
+
+     def use_eagle(self) -> bool:
+-        return self.method in ("eagle", "eagle3", "mtp")
++        return self.method in ("eagle", "eagle3", "mtp", "dynamic_rl")
+
+     def __repr__(self) -> str:
+         method = self.method
+-        model = None if method in ("ngram", "suffix") else self.draft_model_config.model
++        model = None if method in ("ngram", "suffix", "history_tree") else self.draft_model_config.model
+         num_spec_tokens = self.num_speculative_tokens
+         return f"SpeculativeConfig({method=}, {model=}, {num_spec_tokens=})"
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/transformers_utils/configs/eagle.py b/llm_rl/qwen3/verl-mindspeed/vllm/transformers_utils/configs/eagle.py
+index ce428e5..5b768df 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/transformers_utils/configs/eagle.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/transformers_utils/configs/eagle.py
+@@ -22,6 +22,8 @@ class EAGLEConfig(PretrainedConfig):
+         else:
+             model_config = model
+
++        normalized_method = "eagle3" if method == "dynamic_rl" else method
++
+         for k, v in kwargs.items():
+             if k != "architectures" and k != "model_type" and hasattr(model_config, k):
+                 setattr(model_config, k, v)
+@@ -41,7 +43,7 @@ class EAGLEConfig(PretrainedConfig):
+         # LlamaForCausalLM -> EagleLlamaForCausalLM
+         # LlamaForCausalLM -> Eagle3LlamaForCausalLM
+         # LlamaForCausalLMEagle3 -> LlamaForCausalLMEagle3
+-        if method == "eagle":
++        if normalized_method == "eagle":
+             assert self.model is not None, (
+                 "model should not be None when method is eagle"
+             )
+@@ -50,7 +52,7 @@ class EAGLEConfig(PretrainedConfig):
+                 for arch in self.model.architectures
+             ]
+
+-        elif method == "eagle3":
++        elif normalized_method == "eagle3":
+             assert self.model is not None, (
+                 "model should not be None when method is eagle3"
+             )
+@@ -62,7 +64,7 @@ class EAGLEConfig(PretrainedConfig):
+             ]
+         else:
+             raise ValueError(
+-                f"Invalid method {method}. Supported methods are eagle and eagle3."
++                f"Invalid method {method}. Supported methods are eagle, eagle3, and dynamic_rl."
+             )
+
+         super().__init__(**kwargs)
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/eagle.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/eagle.py
+index 9820f51..81be3a2 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/eagle.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/eagle.py
+@@ -64,7 +64,15 @@ class EagleProposer:
+         self.speculative_config = vllm_config.speculative_config
+         assert self.speculative_config is not None
+         self.draft_model_config = self.speculative_config.draft_model_config
+-        self.method = self.speculative_config.method
++        # dynamic_rl switches between history rollout and an EAGLE3 drafter.
++        # When this proposer is used for its EAGLE branch, it must behave like
++        # a real EAGLE3 proposer so aux hidden states and hidden-state combining
++        # are enabled.
++        self.method = (
++            "eagle3"
++            if self.speculative_config.method == "dynamic_rl"
++            else self.speculative_config.method
++        )
+
+         self.runner = runner
+         self.device = device
+@@ -194,27 +202,22 @@ class EagleProposer:
+
+             self.allowed_attn_types = tuple(rocm_types)
+
+-        # Parse the speculative token tree.
+-        spec_token_tree = self.speculative_config.speculative_token_tree
+-        self.tree_choices: list[tuple[int, ...]] = ast.literal_eval(spec_token_tree)
+-        tree_depth = len(self.tree_choices[-1])
+-        # Precompute per-level properties of the tree.
+-        num_drafts_per_level = [0] * tree_depth
+-        for node in self.tree_choices:
+-            num_drafts_per_level[len(node) - 1] += 1
+-        self.cu_drafts_per_level = [num_drafts_per_level[0]]
+-        self.child_drafts_per_level = [num_drafts_per_level[0]]
+-        for level in range(1, tree_depth):
+-            self.cu_drafts_per_level.append(
+-                self.cu_drafts_per_level[-1] + num_drafts_per_level[level]
+-            )
+-            self.child_drafts_per_level.append(
+-                num_drafts_per_level[level] // num_drafts_per_level[level - 1]
+-            )
+-        # Precompute draft position offsets in flattened tree.
+-        self.tree_draft_pos_offsets = torch.arange(
+-            1, len(self.tree_choices) + 1, device=device, dtype=torch.int32
+-        ).repeat(max_batch_size, 1)
++        tree_drafter_params = self.speculative_config.tree_drafter_params
++        if tree_drafter_params is None:
++            self.tree_choices = [
++                (i + 1) * (0, ) for i in range(self.num_speculative_tokens)
++            ]
++            self.cu_drafts_per_level = list(
++                range(1, self.num_speculative_tokens + 1))
++            self.child_drafts_per_level = [1] * self.num_speculative_tokens
++            draft_levels = list(range(1, self.num_speculative_tokens + 1))
++        else:
++            self.tree_choices = tree_drafter_params.draft_nodes
++            self.cu_drafts_per_level = tree_drafter_params.cu_drafts_per_level[1:]
++            self.child_drafts_per_level = tree_drafter_params.child_drafts_per_level
++            draft_levels = tree_drafter_params.draft_levels
++        self.tree_draft_pos_offsets = torch.tensor(
++            draft_levels, device=device, dtype=torch.int32).repeat(max_batch_size, 1)
+
+     def _get_positions(self, num_tokens: int):
+         if self.uses_mrope:
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/tree_draft_params.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/tree_draft_params.py
+new file mode 100644
+index 0000000..98a645b
+--- /dev/null
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/tree_draft_params.py
+@@ -0,0 +1,142 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++import ast
++from dataclasses import dataclass
++
++MAX_TREE_DEPTH = 8
++
++@dataclass
++class TreeDrafterParams:
++    draft_nodes: list[tuple[int, ...]]
++    attn_mask: list[list[bool]]
++    # Cumulative number of drafts at each level.
++    cu_drafts_per_level: list[int]
++    # Number of child drafts that each token has at the given level.
++    child_drafts_per_level: list[int]
++    # Maps each draft token index to its level in the tree.
++    draft_levels: list[int]
++
++    @staticmethod
++    def from_spec_token_tree(spec_token_tree: str) -> "TreeDrafterParams":
++        # Parse the speculative token tree.
++        draft_nodes: list[tuple[int, ...]] = ast.literal_eval(spec_token_tree)
++        # Sort the tree breadth-first.
++        draft_nodes.sort(key=lambda t: (len(t), t))
++        assert len(draft_nodes
++                   ) > 0, "speculative_token_tree must have at least one node."
++        # Only trees with fixed branching factor per level are
++        # currently supported for tree attention.
++        _assert_fixed_branching_factor_per_level(draft_nodes, spec_token_tree)
++
++        tree_depth = len(draft_nodes[-1]) + 1
++        assert tree_depth <= MAX_TREE_DEPTH
++
++        # Precompute per-level properties of the tree.
++        num_nodes_per_level = [0] * tree_depth
++        num_nodes_per_level[0] = 1
++        for node in draft_nodes:
++            num_nodes_per_level[len(node)] += 1
++
++        cu_drafts_per_level = [0]
++        child_drafts_per_level = []
++        draft_levels = []
++        for level in range(1, tree_depth):
++            cu_drafts_per_level.append(cu_drafts_per_level[-1] +
++                                       num_nodes_per_level[level])
++            child_drafts_per_level.append(num_nodes_per_level[level] //
++                                          num_nodes_per_level[level - 1])
++            draft_levels += [level] * num_nodes_per_level[level]
++
++        # Construct the tree attention bias.
++        depth_counts = _get_depth_counts(draft_nodes)
++        attn_mask = _prepare_tree_attn_bias(
++            draft_nodes,
++            depth_counts,
++        )
++
++        return TreeDrafterParams(
++            draft_nodes=draft_nodes,
++            attn_mask=attn_mask,
++            cu_drafts_per_level=cu_drafts_per_level,
++            child_drafts_per_level=child_drafts_per_level,
++            draft_levels=draft_levels,
++        )
++
++
++def _has_fixed_branching_factor(tree_nodes, level):
++    """
++    Checks if all nodes at the given level have the same number of children.
++    """
++    next_level_nodes = [node for node in tree_nodes if len(node) == level + 1]
++    if len(next_level_nodes) == 0:
++        return True
++
++    level_nodes = [node for node in tree_nodes if len(node) == level]
++    child_counts = []
++    for parent in level_nodes:
++        child_counts.append(
++            sum(1 for child in next_level_nodes if child[:-1] == parent))
++    return len(set(child_counts)) <= 1  # All counts are the same.
++
++
++def _assert_fixed_branching_factor_per_level(tree_nodes: list[tuple[int, ...]],
++                                             spec_token_tree: str) -> None:
++    """
++    Asserts that each level of the tree has a fixed branching factor. That is,
++    the number of children per node is the same within a level, but can vary
++    across levels.
++    """
++    tree_depth = len(tree_nodes[-1]) + 1
++    for level in range(1, tree_depth):
++        assert _has_fixed_branching_factor(tree_nodes, level), (
++            f"speculative_token_tree '{spec_token_tree}' has variable "
++            f"branching at level {level}. Tree spec decoding requires "
++            f"a uniform number of children per level.")
++
++
++def _get_depth_counts(sorted_draft_nodes: list[tuple[int, ...]]) -> list[int]:
++    """
++    Counts the number of choices at each depth of the tree.
++    """
++    depth_counts = []
++    prev_depth = 0
++    for path in sorted_draft_nodes:
++        depth = len(path)
++        if depth != prev_depth:
++            depth_counts.append(0)
++        depth_counts[depth - 1] += 1
++        prev_depth = depth
++    return depth_counts
++
++
++def _prepare_tree_attn_bias(
++    sorted_draft_nodes: list[tuple[int, ...]],
++    depth_counts: list[int],
++) -> list[list[bool]]:
++    # +1 comes from the additional root node.
++    tree_len = len(sorted_draft_nodes) + 1
++    tree_attn_mask = [[False for _ in range(tree_len)]
++                      for _ in range(tree_len)]
++
++    mask_val = True
++    for i in range(tree_len):
++        # Set diagonal to all True. Each token should attend to itself.
++        tree_attn_mask[i][i] = mask_val
++        # Set root column to all True. All tokens attend to it.
++        tree_attn_mask[i][0] = mask_val
++
++    # Set all ancestors to True.
++    start = 0
++    for i in range(len(depth_counts)):
++        for j in range(depth_counts[i]):
++            cur_tree_choice = sorted_draft_nodes[start + j]
++            if len(cur_tree_choice) == 1:
++                continue
++
++            for c in range(len(cur_tree_choice) - 1):
++                ancestor_idx = sorted_draft_nodes.index(
++                    cur_tree_choice[:c + 1]) + 1
++                tree_attn_mask[j + start + 1][ancestor_idx] = mask_val
++        start += depth_counts[i]
++    return tree_attn_mask
+\ No newline at end of file
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/utils.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/utils.py
+index 524714d..0cd8172 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/utils.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/spec_decode/utils.py
+@@ -1,7 +1,48 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++from typing import TYPE_CHECKING
++
++import numpy as np
++
+ from vllm.triton_utils import tl, triton
+
++if TYPE_CHECKING:
++    from vllm.v1.core.sched.output import SchedulerOutput
++    from vllm.v1.worker.gpu_input_batch import InputBatch
++
++HEAD_TILE_SIZE: int = 64
++MAX_TREE_DEPTH: int = 16
++
++def apply_draft_offsets(
++    tree_draft_offsets: list[int],
++    input_batch: "InputBatch",
++    scheduler_output: "SchedulerOutput",
++    query_start_loc_np: np.array,
++    token_positions_np: np.array,
++):
++    """
++    Updates the draft token positions with their offsets (levels) in the tree.
++    Args:
++        tree_draft_offsets: Offsets to apply to the draft token positions.
++        input_batch: The input batch.
++        scheduler_output: The scheduler output.
++        query_start_loc_np: Start locations of the queries for each request.
++        token_positions_np: Token positions. Will be updated in-place.
++    """
++
++    draft_token_offsets = np.array(tree_draft_offsets)
++    for (
++            req_id,
++            draft_token_ids,
++    ) in scheduler_output.scheduled_spec_decode_tokens.items():
++        if len(draft_token_ids) == 0:
++            continue
++        req_idx = input_batch.req_id_to_index[req_id]
++        start = query_start_loc_np[req_idx]
++        end = query_start_loc_np[req_idx + 1]
++        num_drafts = end - start - 1
++        token_positions_np[start + 1:end] = (token_positions_np[start] +
++                                             draft_token_offsets[:num_drafts])
+
+ @triton.jit
+ def eagle_prepare_inputs_padded_kernel(
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu/spec_decode/eagle.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu/spec_decode/eagle.py
+index ed92601..18ac258 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu/spec_decode/eagle.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu/spec_decode/eagle.py
+@@ -30,7 +30,14 @@ class EagleSpeculator:
+
+         self.speculative_config = vllm_config.speculative_config
+         assert self.speculative_config is not None
+-        self.method = self.speculative_config.method
++        # dynamic_rl uses an EAGLE3 draft head for its Eagle branch.
++        # Keep the speculator behavior aligned with standalone eagle3 so aux
++        # hidden states are combined correctly in every Eagle path.
++        self.method = (
++            "eagle3"
++            if self.speculative_config.method == "dynamic_rl"
++            else self.speculative_config.method
++        )
+         self.num_speculative_steps = self.speculative_config.num_speculative_tokens
+         self.draft_model_config = self.speculative_config.draft_model_config
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_input_batch.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_input_batch.py
+index 662bade..1063d28 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_input_batch.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_input_batch.py
+@@ -463,7 +463,12 @@ class InputBatch:
+         # _prepare_input_ids.
+         start_index = self.num_tokens_no_spec[req_index]
+         end_token_index = start_index + num_spec_tokens
+-        self.token_ids_cpu[req_index, start_index:end_token_index] = spec_token_ids
++        # NumPy 2.0 warns when Python integers that do not fit in int32 are
++        # assigned directly into an int32 array. Preserve the previous
++        # wraparound semantics explicitly so speculative placeholder tokens do
++        # not flood the logs with DeprecationWarning.
++        spec_token_ids_np = np.asarray(spec_token_ids).astype(np.int32, copy=False)
++        self.token_ids_cpu[req_index, start_index:end_token_index] = spec_token_ids_np
+         cur_spec_token_ids.extend(spec_token_ids)
+
+     def remove_request(self, req_id: str) -> int | None:
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_model_runner.py b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_model_runner.py
+index 525ad5d..b2d456c 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_model_runner.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm/v1/worker/gpu_model_runner.py
+@@ -441,7 +441,7 @@ class GPUModelRunner(
+                 self.drafter = SuffixDecodingProposer(self.vllm_config)
+             elif self.speculative_config.use_eagle():
+                 self.drafter = EagleProposer(self.vllm_config, self.device, self)
+-                if self.speculative_config.method == "eagle3":
++                if self.speculative_config.method in ("eagle3", "dynamic_rl"):
+                     self.use_aux_hidden_state_outputs = (
+                         self.drafter.eagle3_use_aux_hidden_state
+                     )
+@@ -449,6 +449,8 @@ class GPUModelRunner(
+                 self.drafter = MedusaProposer(
+                     vllm_config=self.vllm_config, device=self.device
+                 )
++            elif self.speculative_config.method in ("history_tree", "dynamic_rl"):
++                pass
+             else:
+                 raise ValueError(
+                     "Unknown speculative decoding method: "
+@@ -1083,26 +1085,9 @@ class GPUModelRunner(
+         if not self.speculative_config or not self.model_config.is_hybrid:
+             return
+
+-        # Find the number of accepted tokens for each sequence.
+-        num_accepted_tokens = (
+-            (
+-                torch.cat(
+-                    [
+-                        output_token_ids,
+-                        torch.full(
+-                            (output_token_ids.size(0), 1),
+-                            -1,
+-                            device=output_token_ids.device,
+-                        ),
+-                    ],
+-                    dim=1,
+-                )
+-                == -1
+-            )
+-            .int()
+-            .argmax(-1)
+-            .cpu()
+-            .numpy()
+-        )
++        # Find the number of accepted tokens for each sequence. Tree rejection
++        # can return sparse layouts such as [-1, tok, -1, ..., bonus], so do not
++        # rely on the first -1 position as the accepted length.
++        num_accepted_tokens = output_token_ids.ne(-1).sum(dim=-1).cpu().numpy()
+         for i, num_tokens in enumerate(num_accepted_tokens):
+             self.input_batch.num_accepted_tokens_cpu[i] = num_tokens

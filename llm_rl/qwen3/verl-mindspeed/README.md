@@ -225,6 +225,18 @@ bash internal/train_grpo_qwen3_resampler_example.sh
 
 该特性的设计背景、实现方案和收益说明可参考[Length-Aware Resampler：基于历史 Response 长度的 Rollout 重采样优化](../../../docs/features/length_aware_resampler.md)。
 
+### 可选特性：History Tree Dynamic RL
+
+针对 RL Rollout 长序列采样，本样例提供了一个可选的 History Tree Dynamic RL 投机解码特性。该特性将历史响应复用与 EAGLE3 draft model 组合起来，并在解码过程中按 batch size、历史缓存预热状态和在线 timing 统计动态选择分支。
+
+最小复现脚本为 [train_grpo_qwen3_30b_16die_dynamic_rl.sh](internal/train_grpo_qwen3_30b_16die_dynamic_rl.sh)。该脚本基本等同于已验证的 `train_grpo_qwen3_30b_16die_true_weight.sh` 删除未实现参数后的版本。使用前按实际环境设置 `MODEL_PATH`、`DISTCP_PATH`、`TRAIN_FILE`、`TEST_FILE`，然后在 `llm_rl/qwen3/verl-mindspeed/` 目录下执行：
+
+```bash
+bash internal/train_grpo_qwen3_30b_16die_dynamic_rl.sh
+```
+
+该脚本基于已验证的 16 卡 Qwen3-30B GRPO 启动脚本，只保留当前已实现的 `dynamic_rl` 配置。特性的设计和配置说明可参考[History Tree Dynamic RL 投机解码](../../../docs/features/history_tree_dynamic_rl.md)。
+
 ## 附录
 
 ### 文件说明
@@ -255,15 +267,24 @@ bash internal/train_grpo_qwen3_resampler_example.sh
 |verl|[0017-verl-bugfix-adapt_new_vllm_version.patch](patches/verl/0017-verl-bugfix-adapt_new_vllm_version.patch)|修复切换到vllm>=0.13.0版本引入的import error|
 |verl|[0018-verl-bugfix-ignore_redundant_logs.patch](patches/verl/0018-verl-bugfix-ignore_redundant_logs.patch)|去除多余的警告日志|
 |verl|[0019-verl-feature-length_aware_resampler.patch](patches/verl/0019-verl-feature-length_aware_resampler.patch)|新增 Length-Aware Resampler：基于历史 response 长度对 epoch 内样本重新排序，并提供可选的 rollout 长尾保护机制，详细说明可参考[Length-Aware Resampler：基于历史 Response 长度的 Rollout 重采样优化](../../../docs/features/length_aware_resampler.md)|
+|verl|[0020-verl-feature-enable_history_tree_dynamic_rl.patch](patches/verl/0020-verl-feature-enable_history_tree_dynamic_rl.patch)|新增 History Tree Dynamic RL：在 Rollout 中接入历史响应草稿缓存、EAGLE3 draft model 和动态分支切换，详细说明可参考[History Tree Dynamic RL 投机解码](../../../docs/features/history_tree_dynamic_rl.md)|
 |vllm|[0001-vllm-feature-disable_gc.patch](patches/vllm/0001-vllm-feature-disable_gc.patch)|在decode step前关闭gc，避免因内存管理导致host bound影响推理性能|
 |vllm|[0002-vllm-feature-enable_sam_decoding.patch](patches/vllm/0002-vllm-feature-enable_sam_decoding.patch)|SAM投机推理适配vllm框架：在投机推理的配置中支持`method`为`sam`的选项|
 |vllm|[0003-vllm-bugfix-rope_registry.patch](patches/vllm/0003-vllm-bugfix-rope_registry.patch)|修复ROPE注册时import flash_attn的bug|
+|vllm|[0004-vllm-feature-enable_history_tree_dynamic_rl.patch](patches/vllm/0004-vllm-feature-enable_history_tree_dynamic_rl.patch)|在 speculative config 中支持 `history_tree`、`dynamic_rl`，并适配 Dynamic RL 的 EAGLE3 chain draft 分支|
 |vllm_ascend|[0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](patches/vllm_ascend/0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch)|增加投机推理特性自动开关，解决投机推理特性在batch_size过高时性能劣化的问题|
 |vllm_ascend|[0002-vllm_ascend-feature-enable_sam_decoding.patch](patches/vllm_ascend/0002-vllm_ascend-feature-enable_sam_decoding.patch)|SAM投机推理适配vllm_ascend框架|
 |vllm-ascend|[0003-vllm_ascend-bugfix-set_hccl_op_expansion_mode.patch](patches/vllm_ascend/0003-vllm_ascend-bugfix-set_hccl_op_expansion_mode.patch)|手动修改TP通信域的hccl_op_extension_mode，修复all-gather超时的问题|
 |vllm-ascend|[0004-vllm_ascend-bugfix-npugraph_ex_static_kernel_typo.patch](patches/vllm_ascend/0004-vllm_ascend-bugfix-npugraph_ex_static_kernel_typo.patch)|修复npugraph_ex启用static_kernel时的bug|
 |vllm-ascend|[0005-vllm_ascend-bugfix-align_FIA_input_for_TND_layout.patch](patches/vllm_ascend/0005-vllm_ascend-bugfix-align_FIA_input_for_TND_layout.patch)|修复CANN 8.5.0版本FIA算子在TND格式下的入参padding问题|
 |vllm-ascend|[0006-vllm_ascend-feature-chunk_moe.patch](patches/vllm_ascend/0006-vllm_ascend-feature-chunk_moe.patch)|针对MoE计算场景分块处理优化，解决prefill阶段可能引起的峰值内存过高问题|
+|vllm-ascend|[0007-vllm_ascend-feature-tree_attention_backend.patch](patches/vllm_ascend/0007-vllm_ascend-feature-tree_attention_backend.patch)|为 EAGLE3 tree draft 增加 Ascend tree attention 后端、稀疏输入准备 kernel 和自定义算子库路径补充|
+|vllm-ascend|[0008-vllm_ascend-feature-tree_rejection_sampler.patch](patches/vllm_ascend/0008-vllm_ascend-feature-tree_rejection_sampler.patch)|新增 `AscendTreeRejectionSampler`，支持 tree draft 验证与采样结果回填|
+|vllm-ascend|[0009-vllm_ascend-feature-history_tree_cache_proposer.patch](patches/vllm_ascend/0009-vllm_ascend-feature-history_tree_cache_proposer.patch)|新增 history tree 全局缓存、`HistoryRolloutProposer` 和 speculative method 枚举|
+|vllm-ascend|[0010-vllm_ascend-feature-eagle3_tree_draft.patch](patches/vllm_ascend/0010-vllm_ascend-feature-eagle3_tree_draft.patch)|扩展 `EagleProposer`，支持 EAGLE3 tree draft、chain fallback 和稀疏 tree 输入桥接|
+|vllm-ascend|[0011-vllm_ascend-feature-dynamic_rl_proposer.patch](patches/vllm_ascend/0011-vllm_ascend-feature-dynamic_rl_proposer.patch)|新增 `DynamicProposer` 并注册 `history_tree`、`dynamic_rl` speculative method|
+|vllm-ascend|[0012-vllm_ascend-feature-history_dynamic_rl_worker_integration.patch](patches/vllm_ascend/0012-vllm_ascend-feature-history_dynamic_rl_worker_integration.patch)|在 NPU worker 中接入 History Tree/Dynamic RL 分支选择、timing 统计、tree rejection sampler 和 draft token 同步|
+|vllm-ascend|[0013-vllm_ascend-bugfix-dynamic_rl_moe_compat.patch](patches/vllm_ascend/0013-vllm_ascend-bugfix-dynamic_rl_moe_compat.patch)|修复 Dynamic RL 场景下 MoE gating renorm 和 chunk MoE 结果写回兼容问题|
 |vllm_ascend|[spec_decode/sam_proposer.py](patches/vllm_ascend/spec_decode/sam_proposer.py)|SAM投机推理适配vllm_ascend框架：实现`SAMProposer`类，作为vllm调用SAM投机推理能力的接口|
 |patches|[0001-feature-model_converter.patch](patches/0001-feature-model_converter.patch) | 新增`USE_ALLTOALL_OVERLAP`开启时hf2mcore权重转换逻辑|
 

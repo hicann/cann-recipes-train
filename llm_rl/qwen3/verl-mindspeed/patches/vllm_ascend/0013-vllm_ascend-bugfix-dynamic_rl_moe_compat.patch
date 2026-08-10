@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: qiuzy3 <qiuzy3@users.noreply.github.com>
+Date: Mon, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Fix MoE compatibility for Dynamic RL rollout
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/experts_selector.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/experts_selector.py
+index 07b611e..122fac0 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/experts_selector.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/experts_selector.py
+@@ -107,6 +107,10 @@ def check_npu_moe_gating_top_k(
+         num_expert_group: Optional[int] = None,
+         scoring_func: str = "softmax",
+         custom_routing_function: Optional[Callable] = None):
++    # Current Ascend fused moe_gating_top_k rejects renorm=1 in this stack,
++    # so keep model-correct renormalization by falling back to the native path.
++    if renormalize:
++        return False
+     if scoring_func == "sigmoid" and not renormalize:  #sigmoid + renorm=0 is not supported in current branch
+         return False
+     if custom_routing_function is not None:
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/moe_comm_method.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/moe_comm_method.py
+index 94a8bb6..b532a43 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/moe_comm_method.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/ops/fused_moe/moe_comm_method.py
+@@ -49,7 +49,6 @@ def chunk_moe_decorator(fused_experts_func):
+         topk_weights = get_arg('topk_weights', kwargs)
+         topk_ids = get_arg('topk_ids', kwargs)
+
+-        chunk_start_index = 0
+         ctx = get_forward_context()
+         from vllm.distributed import get_tensor_model_parallel_world_size
+         tp_size = get_tensor_model_parallel_world_size()
+@@ -91,16 +90,14 @@ def chunk_moe_decorator(fused_experts_func):
+
+             if skip_result_store:
+                 continue
+-            chunk_end_idx = chunk_start_index + res.routed_out.shape[0]
+-            final_routed_out[chunk_start_index: chunk_end_idx, :] = res.routed_out
++            final_routed_out[chunk_start:chunk_end, :] = res.routed_out
+             if res.expert_tokens is not None:
+                 all_expert_tokens.append(res.expert_tokens)
+             last_before_dispatch_evt = res.before_dispatch_evt
+             last_before_combine_evt = res.before_combine_evt
+             group_list_type = res.group_list_type
+-            chunk_start_index = chunk_end_idx
+
+-        combine_expert_tokens = None
++        combined_expert_tokens = None
+         if all_expert_tokens:
+             combined_expert_tokens = torch.cat(all_expert_tokens, dim=0)
+         return FusedExpertsResult(

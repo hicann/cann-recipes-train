@@ -1,0 +1,806 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: qiuzy3 <qiuzy3@users.noreply.github.com>
+Date: Mon, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add Dynamic RL proposer and method registration
+
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/dynamic_rl_proposer.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/dynamic_rl_proposer.py
+new file mode 100644
+index 0000000..e8f1ef5
+--- /dev/null
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/dynamic_rl_proposer.py
+@@ -0,0 +1,771 @@
++import os
++from typing import Any, Optional
++
++import torch
++import numpy as np
++import torch.nn as nn
++from vllm.config import (CUDAGraphMode, VllmConfig)
++from vllm.v1.core.sched.output import SchedulerOutput
++from vllm.v1.sample.metadata import SamplingMetadata
++from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
++from vllm_ascend.spec_decode.interface import Proposer, SpecDcodeType
++
++from vllm_ascend.spec_decode.eagle_proposer import EagleProposer
++from vllm_ascend.spec_decode.history_rollout import HistoryRolloutProposer
++
++
++class DynamicProposer(Proposer):
++    def __init__(self,
++                 vllm_config: VllmConfig,
++                 device: torch.device,
++                 runner=None):
++        self.name = SpecDcodeType.DYNAMIC_RL
++
++        self.history_rollout_proposer = HistoryRolloutProposer(vllm_config, device, runner)
++        self.eagle_enabled = True
++        self.eagle_proposer = EagleProposer(vllm_config, device, runner)
++
++        self.eagle_threshold = int(
++            os.getenv("VLLM_DYNAMIC_RL_EAGLE_MAX_BSZ", "8"))
++        self.eagle_probe_max_batch = min(
++            self.eagle_threshold,
++            max(
++                1,
++                int(os.getenv(
++                    "VLLM_DYNAMIC_RL_EAGLE_PROBE_MAX_BSZ",
++                    "2",
++                )),
++            ),
++        )
++        self.history_threshold = int(
++            os.getenv(
++                "VLLM_DYNAMIC_RL_HISTORY_UPPER_BSZ_EXCLUSIVE",
++                str(self.history_rollout_proposer.max_spec_reqs),
++            ))
++        if self.history_rollout_proposer.max_spec_reqs > 0:
++            if self.history_threshold > 0:
++                self.history_threshold = min(
++                    self.history_threshold,
++                    self.history_rollout_proposer.max_spec_reqs,
++                )
++            else:
++                self.history_threshold = (
++                    self.history_rollout_proposer.max_spec_reqs)
++
++        self.policy = os.getenv(
++            "VLLM_DYNAMIC_RL_POLICY", "timing_guard").strip().lower()
++        self.eagle_cold_start_guard = os.getenv(
++            "VLLM_DYNAMIC_RL_EAGLE_COLD_START_GUARD", "1").lower() not in (
++                "0", "false", "no", "off")
++        self.history_warmup_records = max(
++            1,
++            int(os.getenv("VLLM_DYNAMIC_RL_HISTORY_WARMUP_RECORDS", "1")),
++        )
++        self.score_ema_alpha = float(
++            os.getenv("VLLM_DYNAMIC_RL_SCORE_EMA_ALPHA", "0.3"))
++        self.switch_margin = float(
++            os.getenv("VLLM_DYNAMIC_RL_SWITCH_MARGIN", "1.02"))
++        self.compare_after_steps = max(
++            1,
++            int(os.getenv("VLLM_DYNAMIC_RL_COMPARE_AFTER_STEPS", "64")),
++        )
++        self.eagle_probe_steps = max(
++            1,
++            int(os.getenv(
++                "VLLM_DYNAMIC_RL_EAGLE_PROBE_STEPS",
++                "8",
++            )),
++        )
++        self.eagle_cooldown_steps = max(
++            0,
++            int(os.getenv("VLLM_DYNAMIC_RL_EAGLE_COOLDOWN_STEPS", "8192")),
++        )
++        self.eagle_max_cooldown_steps = max(
++            self.eagle_cooldown_steps,
++            int(os.getenv("VLLM_DYNAMIC_RL_EAGLE_MAX_COOLDOWN_STEPS",
++                          "65536")),
++        )
++        self.eagle_cooldown_growth = max(
++            1.0,
++            float(os.getenv("VLLM_DYNAMIC_RL_EAGLE_COOLDOWN_GROWTH", "4.0")),
++        )
++        self.eagle_bad_step_ratio = float(
++            os.getenv("VLLM_DYNAMIC_RL_EAGLE_BAD_STEP_RATIO", "0.98"))
++        self._history_sync_updates = 0
++        self._history_sync_calls = 0
++        self._reset_adaptive_state()
++
++        self.mode = "history_rollout"
++        self.current = self.history_rollout_proposer
++        self._last_mode = None
++        self._acceptance_source_mode = None
++        self._eagle_predict_times = 0
++        self._eagle_effective_times = 0
++        self._eagle_total_right_length = 0
++
++    def load_model(self, model: nn.Module) -> None:
++        self.eagle_proposer.load_model(model)
++
++    @property
++    def eagle3_use_aux_hidden_state(self) -> bool:
++        return self.eagle_proposer.eagle3_use_aux_hidden_state
++
++    def reset_tree_status(self) -> None:
++        self.eagle_proposer.reset_tree_status()
++
++    def reset_history_cache(self) -> None:
++        self.history_rollout_proposer.reset_history_cache()
++        self._history_sync_updates = 0
++        self._history_sync_calls = 0
++        self._reset_adaptive_state()
++
++    def sync_records(self, records: list[dict]) -> int:
++        updated = int(self.history_rollout_proposer.sync_records(records))
++        self._history_sync_calls += 1
++        self._history_sync_updates += max(updated, 0)
++        return updated
++
++    def _batch_size(self, valid_sampled_token_ids) -> int:
++        return len(valid_sampled_token_ids)
++
++    def _reset_adaptive_state(self) -> None:
++        self._decision_step = 0
++        self._perf_stats: dict[str, dict[str, dict[str, float | int]]] = {
++            "eagle3": {},
++            "history_rollout": {},
++        }
++        self._bucket_states: dict[str, dict[str, str | int]] = {}
++        self._last_decision_info: dict[str, Any] = {}
++        self._pending_eagle_cycles: dict[str, dict[str, float | int | None]] = {}
++
++    def _history_ready(self) -> bool:
++        return self._history_sync_updates >= self.history_warmup_records
++
++    def _history_supported(self, batch_size: int) -> bool:
++        # Once the history cache is warm, keep the same <= max_spec_reqs
++        # fast path as pure history_tree instead of pushing the boundary
++        # batch back to Eagle.
++        return self.history_threshold <= 0 or batch_size <= self.history_threshold
++
++    def _batch_bucket(self, batch_size: int) -> str:
++        for upper_bound in (1, 2, 4, 8, 16, 32, 64, 128):
++            if batch_size <= upper_bound:
++                return f"le_{upper_bound}"
++        return "gt_128"
++
++    def _get_perf_stat(self,
++                       mode: str,
++                       bucket: str,
++                       create: bool = False) -> Optional[dict[str, float | int]]:
++        mode_stats = self._perf_stats.setdefault(mode, {})
++        stat = mode_stats.get(bucket)
++        if stat is None and create:
++            stat = {
++                "ema_tokens_per_ms": 0.0,
++                "observations": 0,
++                "last_bucket_step": 0,
++                "last_total_ms": 0.0,
++                "last_accepted_tokens": 0.0,
++            }
++            mode_stats[bucket] = stat
++        return stat
++
++    def _score(self, stat: Optional[dict[str, float | int]]) -> Optional[float]:
++        if not stat or int(stat["observations"]) <= 0:
++            return None
++        return float(stat["ema_tokens_per_ms"])
++
++    def _get_bucket_state(self,
++                          bucket: str,
++                          create: bool = False) -> Optional[dict[str, str | int]]:
++        state = self._bucket_states.get(bucket)
++        if state is None and create:
++            state = {
++                "mode": "history_rollout",
++                "mode_steps": 0,
++                "eagle_cooldown_until": 0,
++                "eagle_bad_probes": 0,
++            }
++            self._bucket_states[bucket] = state
++        return state
++
++    def _start_eagle_cooldown(
++        self,
++        bucket_state: dict[str, str | int],
++    ) -> None:
++        if self.eagle_cooldown_steps <= 0:
++            return
++        bad_probe_count = int(bucket_state.get("eagle_bad_probes", 0)) + 1
++        cooldown_steps = int(
++            self.eagle_cooldown_steps
++            * (self.eagle_cooldown_growth ** (bad_probe_count - 1)))
++        cooldown_steps = min(cooldown_steps, self.eagle_max_cooldown_steps)
++        bucket_state["eagle_cooldown_until"] = (
++            self._decision_step + cooldown_steps)
++        bucket_state["eagle_bad_probes"] = bad_probe_count
++
++    def _default_mode(self, batch_size: int) -> tuple[str, str]:
++        if batch_size <= self.eagle_threshold:
++            return "eagle3", "default_eagle_under_threshold"
++        return "history_rollout", "default_large_batch_history"
++
++    def _decide_timing_guard(self, batch_size: int,
++                             bucket: str,
++                             bucket_state: dict[str, str | int]
++                             ) -> tuple[str, str, bool]:
++        if batch_size > self.eagle_threshold:
++            return "history_rollout", "large_batch_history", False
++
++        current_mode = str(bucket_state.get("mode", "eagle3"))
++        current_steps = int(bucket_state.get("mode_steps", 0))
++        eagle_stat = self._get_perf_stat("eagle3", bucket)
++        history_stat = self._get_perf_stat("history_rollout", bucket)
++        eagle_score = self._score(eagle_stat)
++        history_score = self._score(history_stat)
++
++        if history_score is None:
++            return "history_rollout", "dynamic_rl_bootstrap_history", False
++        cooldown_until = int(bucket_state.get("eagle_cooldown_until", 0))
++        if self._decision_step <= cooldown_until:
++            return (
++                "history_rollout",
++                f"dynamic_rl_eagle_cooldown_until_{cooldown_until}",
++                current_mode != "history_rollout",
++            )
++        if batch_size > self.eagle_probe_max_batch:
++            return (
++                "history_rollout",
++                f"dynamic_rl_history_skip_eagle_probe_bsz_{batch_size}",
++                current_mode != "history_rollout",
++            )
++
++        if current_mode == "history_rollout":
++            if current_steps < self.compare_after_steps:
++                return (
++                    "history_rollout",
++                    f"dynamic_rl_collect_history_{current_steps}/{self.compare_after_steps}",
++                    False,
++                )
++            if eagle_score is None:
++                return "eagle3", "dynamic_rl_probe_eagle_init", True
++            if eagle_score >= history_score * self.switch_margin:
++                return (
++                    "eagle3",
++                    f"dynamic_rl_switch_to_eagle_{eagle_score:.4f}_vs_{history_score:.4f}",
++                    True,
++                )
++            return (
++                "history_rollout",
++                f"dynamic_rl_keep_history_{history_score:.4f}_vs_{eagle_score:.4f}",
++                True,
++            )
++
++        if eagle_score is None:
++            return "eagle3", "dynamic_rl_bootstrap_eagle", False
++        if current_steps < self.eagle_probe_steps:
++            return (
++                "eagle3",
++                f"dynamic_rl_collect_eagle_{current_steps}/{self.eagle_probe_steps}",
++                False,
++            )
++        if history_score >= eagle_score * self.switch_margin:
++            return (
++                "history_rollout",
++                f"dynamic_rl_switch_to_history_{history_score:.4f}_vs_{eagle_score:.4f}",
++                True,
++            )
++        if eagle_score < history_score * self.switch_margin:
++            return (
++                "history_rollout",
++                f"dynamic_rl_return_to_history_{history_score:.4f}_vs_{eagle_score:.4f}",
++                True,
++            )
++        return (
++            "eagle3",
++            f"dynamic_rl_keep_eagle_{eagle_score:.4f}_vs_{history_score:.4f}",
++            True,
++        )
++
++    def _build_decision_info(self, batch_size: int) -> dict[str, Any]:
++        self._decision_step += 1
++        bucket = self._batch_bucket(batch_size)
++        bucket_state = self._get_bucket_state(bucket, create=True)
++        current_mode = str(bucket_state["mode"])
++        current_steps = int(bucket_state["mode_steps"])
++        history_ready = self._history_ready()
++
++        if batch_size > self.eagle_threshold:
++            mode, reason = "history_rollout", "large_batch_history"
++        elif (self.policy not in ("history_first", "threshold",
++                                  "threshold_only")
++              and self.eagle_cold_start_guard and not history_ready):
++            # In verl step 1 there is no synced rollout history yet. The logs
++            # show the first Eagle probes at bsz=1/2 are much slower than the
++            # baseline/history path, so keep collecting cheap history timing
++            # until the first history sync lands.
++            mode, reason = (
++                "history_rollout",
++                "dynamic_rl_wait_history_warmup",
++            )
++            reset_mode_steps = current_mode != mode
++        elif not self._history_ready():
++            if self.policy == "history_first":
++                mode, reason = "history_rollout", "history_not_ready_use_history"
++                reset_mode_steps = current_mode != mode
++            elif self.policy in ("threshold", "threshold_only"):
++                mode, reason = self._default_mode(batch_size)
++                reset_mode_steps = current_mode != mode
++            else:
++                mode, reason, reset_mode_steps = self._decide_timing_guard(
++                    batch_size,
++                    bucket,
++                    bucket_state,
++                )
++        elif self.policy == "history_first":
++            mode, reason = "history_rollout", "history_first_policy"
++            reset_mode_steps = current_mode != mode
++        elif self.policy in ("threshold", "threshold_only"):
++            mode, reason = self._default_mode(batch_size)
++            reset_mode_steps = current_mode != mode
++        else:
++            mode, reason, reset_mode_steps = self._decide_timing_guard(
++                batch_size,
++                bucket,
++                bucket_state,
++            )
++        if batch_size > self.eagle_threshold:
++            reset_mode_steps = current_mode != mode
++
++        eagle_stat = self._get_perf_stat("eagle3", bucket)
++        history_stat = self._get_perf_stat("history_rollout", bucket)
++        return {
++            "dynamic_mode": mode,
++            "dynamic_reason": reason,
++            "dynamic_bucket": bucket,
++            "dynamic_batch_size": batch_size,
++            "dynamic_history_ready": history_ready,
++            "dynamic_history_supported": self._history_supported(batch_size),
++            "dynamic_policy": self.policy,
++            "dynamic_eagle_enabled": self.eagle_enabled,
++            "dynamic_eagle_cold_start_guard": self.eagle_cold_start_guard,
++            "dynamic_current_mode": current_mode,
++            "dynamic_mode_steps": current_steps,
++            "dynamic_compare_after_steps": self.compare_after_steps,
++            "dynamic_eagle_probe_steps": self.eagle_probe_steps,
++            "dynamic_eagle_cooldown_until":
++                int(bucket_state.get("eagle_cooldown_until", 0)),
++            "dynamic_eagle_bad_probes":
++                int(bucket_state.get("eagle_bad_probes", 0)),
++            "dynamic_history_sync_calls": self._history_sync_calls,
++            "dynamic_history_sync_updates": self._history_sync_updates,
++            "dynamic_reset_mode_steps": reset_mode_steps,
++            "dynamic_eagle_tokens_per_ms":
++                self._score(eagle_stat),
++            "dynamic_history_tokens_per_ms":
++                self._score(history_stat),
++            "dynamic_eagle_observations":
++                0 if eagle_stat is None else int(eagle_stat["observations"]),
++            "dynamic_history_observations":
++                0 if history_stat is None else int(history_stat["observations"]),
++        }
++
++    def _accepted_length(self, sampled_ids) -> int:
++        if isinstance(sampled_ids, torch.Tensor):
++            if sampled_ids.numel() == 0:
++                return 0
++            return int((sampled_ids >= 0).sum().item())
++        return len(sampled_ids)
++
++    def _extract_step_totals(
++        self,
++        spec_timing_info: dict[str, Any],
++    ) -> tuple[float, float] | None:
++        total_ms = 0.0
++        for key in (
++            "forward_ms",
++            "logits_ms",
++            "rejection_sample_ms",
++            "bookkeeping_ms",
++            "propose_draft_ms",
++        ):
++            total_ms += float(spec_timing_info.get(key, 0.0) or 0.0)
++        accepted_tokens = float(spec_timing_info.get("accepted_tokens", 0.0)
++                                or 0.0)
++        if total_ms <= 0.0 or accepted_tokens <= 0.0:
++            return None
++        return total_ms, accepted_tokens
++
++    def _record_perf_observation(
++        self,
++        mode: str,
++        bucket: str,
++        total_ms: float,
++        accepted_tokens: float,
++        spec_timing_info: dict[str, Any],
++        *,
++        force_mode_step: bool = False,
++    ) -> tuple[float, dict[str, float | int], dict[str, str | int]]:
++        tokens_per_ms = accepted_tokens / total_ms
++        stat = self._get_perf_stat(mode, bucket, create=True)
++        observations = int(stat["observations"])
++        if observations <= 0:
++            stat["ema_tokens_per_ms"] = tokens_per_ms
++        else:
++            stat["ema_tokens_per_ms"] = (
++                (1.0 - self.score_ema_alpha) * float(stat["ema_tokens_per_ms"])
++                + self.score_ema_alpha * tokens_per_ms
++            )
++        stat["observations"] = observations + 1
++        stat["last_bucket_step"] = int(spec_timing_info.get(
++            "dynamic_mode_steps", 0) or 0)
++        stat["last_total_ms"] = total_ms
++        stat["last_accepted_tokens"] = accepted_tokens
++
++        bucket_state = self._get_bucket_state(bucket, create=True)
++        if force_mode_step:
++            bucket_state["mode_steps"] = int(bucket_state["mode_steps"]) + 1
++        elif str(bucket_state["mode"]) == mode:
++            bucket_state["mode_steps"] = int(bucket_state["mode_steps"]) + 1
++
++        return tokens_per_ms, stat, bucket_state
++
++    def _maybe_start_pending_eagle_cycle(
++        self,
++        spec_timing_info: dict[str, Any],
++        total_ms: float,
++        accepted_tokens: float,
++    ) -> bool:
++        mode = str(spec_timing_info.get("dynamic_mode", ""))
++        bucket = str(spec_timing_info.get("dynamic_bucket", ""))
++        attn_state = str(spec_timing_info.get("attn_state", ""))
++        if mode != "eagle3" or not bucket or attn_state != "DecodeOnly":
++            return False
++        if int(spec_timing_info.get("spec_reqs_after", 0) or 0) <= 0:
++            return False
++
++        self._pending_eagle_cycles[bucket] = {
++            "total_ms": total_ms,
++            "accepted_tokens": accepted_tokens,
++            "history_score":
++                self._score(self._get_perf_stat("history_rollout", bucket)),
++        }
++        spec_timing_info["dynamic_eagle_cycle_pending"] = True
++        return True
++
++    def _maybe_finalize_pending_eagle_cycle(
++        self,
++        spec_timing_info: dict[str, Any],
++        total_ms: float,
++        accepted_tokens: float,
++    ) -> bool:
++        bucket = str(spec_timing_info.get("dynamic_bucket", ""))
++        attn_state = str(spec_timing_info.get("attn_state", ""))
++        pending = self._pending_eagle_cycles.get(bucket)
++        if pending is None or attn_state != "SpecDecoding":
++            return False
++        if int(spec_timing_info.get("spec_reqs_before", 0) or 0) <= 0:
++            return False
++
++        cycle_total_ms = float(pending["total_ms"]) + total_ms
++        cycle_accepted_tokens = float(pending["accepted_tokens"]) + accepted_tokens
++        tokens_per_ms, stat, bucket_state = self._record_perf_observation(
++            "eagle3",
++            bucket,
++            cycle_total_ms,
++            cycle_accepted_tokens,
++            spec_timing_info,
++            force_mode_step=True,
++        )
++        spec_timing_info["dynamic_step_tokens_per_ms"] = tokens_per_ms
++        spec_timing_info["dynamic_mode_tokens_per_ms_after"] = float(
++            stat["ema_tokens_per_ms"])
++        spec_timing_info["dynamic_mode_steps_after"] = int(
++            bucket_state["mode_steps"])
++        spec_timing_info["dynamic_eagle_cycle_total_ms"] = cycle_total_ms
++        spec_timing_info["dynamic_eagle_cycle_accepted_tokens"] = (
++            cycle_accepted_tokens)
++        spec_timing_info["dynamic_eagle_cycle_tokens_per_ms"] = tokens_per_ms
++
++        history_score = pending.get("history_score")
++        if history_score is None:
++            history_score = self._score(self._get_perf_stat(
++                "history_rollout", bucket))
++        if (history_score is not None
++                and tokens_per_ms < float(history_score) * self.eagle_bad_step_ratio):
++            bucket_state["mode"] = "history_rollout"
++            bucket_state["mode_steps"] = 0
++            self._start_eagle_cooldown(bucket_state)
++            spec_timing_info["dynamic_forced_next_mode"] = "history_rollout"
++            spec_timing_info["dynamic_eagle_bad_step"] = True
++            spec_timing_info["dynamic_eagle_cooldown_until_after"] = int(
++                bucket_state.get("eagle_cooldown_until", 0))
++
++        del self._pending_eagle_cycles[bucket]
++        return True
++
++    def _observe_previous_eagle_acceptance(self, valid_sampled_token_ids) -> None:
++        if self._last_mode != "eagle3":
++            return
++
++        for sampled_ids in valid_sampled_token_ids:
++            accept_length = self._accepted_length(sampled_ids)
++            if accept_length <= 0:
++                continue
++            self._eagle_predict_times += 1
++            if accept_length > 1:
++                self._eagle_effective_times += 1
++                self._eagle_total_right_length += (accept_length - 1)
++
++    def use_eagle(self, valid_sampled_token_ids):
++        batch_size = self._batch_size(valid_sampled_token_ids)
++        if batch_size > self.eagle_threshold:
++            return False
++        if self.policy == "history_first":
++            return False
++        if self.policy in ("threshold", "threshold_only"):
++            return (batch_size <= self.eagle_threshold)
++        if self.eagle_cold_start_guard and not self._history_ready():
++            return False
++        if not self._history_ready():
++            return False
++        decision = self._build_decision_info(batch_size)
++        return decision["dynamic_mode"] == "eagle3"
++
++    def use_history_rollout(self, valid_sampled_token_ids):
++        batch_size = self._batch_size(valid_sampled_token_ids)
++        if batch_size > self.eagle_threshold:
++            return True
++        if self.policy == "history_first":
++            return True
++        if self.policy in ("threshold", "threshold_only"):
++            return batch_size > self.eagle_threshold
++        if self.eagle_cold_start_guard and not self._history_ready():
++            return True
++        if not self._history_ready():
++            return False
++        decision = self._build_decision_info(batch_size)
++        return decision["dynamic_mode"] == "history_rollout"
++
++    def switch(self, valid_sampled_token_ids):
++        previous_mode = self._last_mode
++        self._observe_previous_eagle_acceptance(valid_sampled_token_ids)
++        self._acceptance_source_mode = previous_mode
++        batch_size = self._batch_size(valid_sampled_token_ids)
++        decision = self._build_decision_info(batch_size)
++        self.mode = str(decision["dynamic_mode"])
++        self.current = (
++            self.history_rollout_proposer
++            if self.mode == "history_rollout"
++            else self.eagle_proposer
++        )
++        self._last_mode = self.mode
++        self._last_decision_info = decision
++        bucket_state = self._get_bucket_state(
++            str(decision["dynamic_bucket"]), create=True)
++        if str(bucket_state["mode"]) != self.mode:
++            previous_mode = str(bucket_state["mode"])
++            bucket_state["mode"] = self.mode
++            bucket_state["mode_steps"] = 0
++            if (previous_mode == "eagle3"
++                    and self.mode == "history_rollout"
++                    and str(decision["dynamic_reason"]).startswith(
++                        ("dynamic_rl_switch_to_history_",
++                         "dynamic_rl_return_to_history_"))):
++                self._start_eagle_cooldown(bucket_state)
++        elif bool(decision.get("dynamic_reset_mode_steps", False)):
++            bucket_state["mode_steps"] = 0
++
++    def get_last_decision_info(self) -> dict[str, Any]:
++        return dict(self._last_decision_info)
++
++    def propose_batch(
++        self,
++        accept_length_list: list[int],
++        sampled_token_id_list: list[list[int]],
++        prompt_token_id_list: list[list[int]],
++    ):
++        return self.history_rollout_proposer.propose_batch(
++            accept_length_list,
++            sampled_token_id_list,
++            prompt_token_id_list,
++            count_metrics=(self._acceptance_source_mode == "history_rollout"),
++        )
++
++    def propose(
++        self,
++        accept_length: int,
++        sampled_token_ids: list[int],
++        prompt_token_ids: list[int],
++    ):
++        return self.history_rollout_proposer.propose(
++            accept_length,
++            sampled_token_ids,
++            prompt_token_ids,
++            count_metrics=(self._acceptance_source_mode == "history_rollout"),
++        )
++
++    def observe_step_result(self, spec_timing_info: dict[str, Any]) -> None:
++        mode = str(spec_timing_info.get("dynamic_mode", ""))
++        bucket = str(spec_timing_info.get("dynamic_bucket", ""))
++        attn_state = str(spec_timing_info.get("attn_state", ""))
++        if mode not in ("eagle3", "history_rollout") or not bucket:
++            return
++        if attn_state not in ("DecodeOnly", "SpecDecoding"):
++            return
++
++        step_totals = self._extract_step_totals(spec_timing_info)
++        if step_totals is None:
++            return
++        total_ms, accepted_tokens = step_totals
++
++        if self._maybe_finalize_pending_eagle_cycle(
++                spec_timing_info, total_ms, accepted_tokens):
++            return
++        if self._maybe_start_pending_eagle_cycle(
++                spec_timing_info, total_ms, accepted_tokens):
++            return
++
++        tokens_per_ms, stat, bucket_state = self._record_perf_observation(
++            mode,
++            bucket,
++            total_ms,
++            accepted_tokens,
++            spec_timing_info,
++        )
++        spec_timing_info["dynamic_step_tokens_per_ms"] = tokens_per_ms
++        spec_timing_info["dynamic_mode_tokens_per_ms_after"] = float(
++            stat["ema_tokens_per_ms"])
++        spec_timing_info["dynamic_mode_steps_after"] = int(
++            bucket_state["mode_steps"])
++
++        if mode == "eagle3":
++            history_score = self._score(self._get_perf_stat(
++                "history_rollout", bucket))
++            if (history_score is not None
++                    and tokens_per_ms < history_score * self.eagle_bad_step_ratio):
++                bucket_state["mode"] = "history_rollout"
++                bucket_state["mode_steps"] = 0
++                self._start_eagle_cooldown(bucket_state)
++                spec_timing_info["dynamic_forced_next_mode"] = "history_rollout"
++                spec_timing_info["dynamic_eagle_bad_step"] = True
++                spec_timing_info["dynamic_eagle_cooldown_until_after"] = int(
++                    bucket_state.get("eagle_cooldown_until", 0))
++
++    def get_metrics(self, reset: bool = False) -> dict[str, float]:
++        history_metrics = self.history_rollout_proposer.get_metrics(
++            reset=reset)
++        history_predict_times = float(history_metrics["predict_times"])
++        history_effective_times = float(history_metrics["effective_times"])
++        history_total_right_length = float(history_metrics["total_right_length"])
++        eagle_predict_times = float(self._eagle_predict_times)
++        eagle_effective_times = float(self._eagle_effective_times)
++        eagle_total_right_length = float(self._eagle_total_right_length)
++        predict_times = (
++            history_predict_times + eagle_predict_times)
++        effective_times = (
++            history_effective_times + eagle_effective_times)
++        total_right_length = (
++            history_total_right_length + eagle_total_right_length)
++        history_effective_percent = (
++            history_effective_times / history_predict_times
++            if history_predict_times > 0 else 0.0
++        )
++        history_effective_length = (
++            history_total_right_length / history_effective_times
++            if history_effective_times > 0 else 0.0
++        )
++        eagle_effective_percent = (
++            eagle_effective_times / eagle_predict_times
++            if eagle_predict_times > 0 else 0.0
++        )
++        eagle_effective_length = (
++            eagle_total_right_length / eagle_effective_times
++            if eagle_effective_times > 0 else 0.0
++        )
++        metrics = {
++            "predict_times": float(predict_times),
++            "effective_times": float(effective_times),
++            "total_right_length": float(total_right_length),
++            "dynamic_rl/eagle_predict_times":
++                eagle_predict_times,
++            "dynamic_rl/eagle_effective_times":
++                eagle_effective_times,
++            "dynamic_rl/eagle_total_right_length":
++                eagle_total_right_length,
++            "dynamic_rl/eagle_effective_percent":
++                eagle_effective_percent,
++            "dynamic_rl/eagle_effective_length":
++                eagle_effective_length,
++            "dynamic_rl/history_predict_times":
++                history_predict_times,
++            "dynamic_rl/history_effective_times":
++                history_effective_times,
++            "dynamic_rl/history_total_right_length":
++                history_total_right_length,
++            "dynamic_rl/history_effective_percent":
++                history_effective_percent,
++            "dynamic_rl/history_effective_length":
++                history_effective_length,
++        }
++        if reset:
++            self._eagle_predict_times = 0
++            self._eagle_effective_times = 0
++            self._eagle_total_right_length = 0
++            self._last_mode = None
++            self._acceptance_source_mode = None
++        return metrics
++
++    @torch.inference_mode()
++    def dummy_run(self,
++                  num_tokens: int,
++                  with_prefill: bool = False,
++                  in_graph_capturing: bool = False,
++                  num_reqs: int = 0,
++                  num_tokens_across_dp: Optional[torch.Tensor] = None,
++                  aclgraph_runtime_mode: CUDAGraphMode = CUDAGraphMode.NONE,
++                  batch_descriptor=None,
++                  dummy_compute_logits=lambda hidden_states: None,
++                  is_profile=False):
++        # Capture both branches while graph capture is enabled. Dynamic RL
++        # starts on history_rollout, but may switch to Eagle3 at runtime.
++        # Without this warm-up the first switch attempts a late draft graph
++        # capture, after vLLM has disabled graph capturing.
++        if is_profile or in_graph_capturing:
++            self.history_rollout_proposer.dummy_run(
++                num_tokens,
++                with_prefill,
++                in_graph_capturing,
++                num_reqs,
++                num_tokens_across_dp,
++                aclgraph_runtime_mode,
++                batch_descriptor,
++                dummy_compute_logits,
++                is_profile)
++            self.eagle_proposer.dummy_run(
++                num_tokens,
++                with_prefill,
++                in_graph_capturing,
++                num_reqs,
++                num_tokens_across_dp,
++                aclgraph_runtime_mode,
++                batch_descriptor,
++                dummy_compute_logits,
++                is_profile)
++            return
++
++        current = self.current
++        if current is None:
++            return
++        current.dummy_run(
++            num_tokens,
++            with_prefill,
++            in_graph_capturing,
++            num_reqs,
++            num_tokens_across_dp,
++            aclgraph_runtime_mode,
++            batch_descriptor,
++            dummy_compute_logits,
++            is_profile)
++
++    def __getattr__(self, name):
++        return getattr(self.current, name)
+diff --git a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/__init__.py b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/__init__.py
+index fbefb77..745f7e0 100644
+--- a/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/__init__.py
++++ b/llm_rl/qwen3/verl-mindspeed/vllm_ascend/spec_decode/__init__.py
+@@ -21,6 +21,8 @@ from vllm_ascend.spec_decode.medusa_proposer import MedusaProposer
+ from vllm_ascend.spec_decode.mtp_proposer import MtpProposer
+ from vllm_ascend.spec_decode.ngram_proposer import NgramProposer
+ from vllm_ascend.spec_decode.suffix_proposer import SuffixDecodingProposer
++from vllm_ascend.spec_decode.history_rollout import HistoryRolloutProposer
++from vllm_ascend.spec_decode.dynamic_rl_proposer import DynamicProposer
+ from patches.vllm_ascend.spec_decode.sam_proposer import SAMDecodingProposer
+
+
+@@ -37,6 +39,10 @@ def get_spec_decode_method(method, vllm_config, device, runner):
+         return MedusaProposer(vllm_config, device, runner)
+     elif method == "sam":
+         return SAMDecodingProposer(vllm_config, device, runner)
++    elif method == "history_tree":
++        return HistoryRolloutProposer(vllm_config, device, runner)
++    elif method == "dynamic_rl":
++        return DynamicProposer(vllm_config, device, runner)
+     else:
+         raise ValueError("Unknown speculative decoding method: "
+                          f"{method}")
