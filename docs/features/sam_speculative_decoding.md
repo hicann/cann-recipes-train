@@ -52,24 +52,24 @@ SAM 无损投机推理能力的核心组件，实现了上文提到的动态 SAM
 2. 序列预测
  - **`gen_draft(index, start_token)`**: 从当前输入的token生成指定数量个 token 的后续序列。
 
-代码： [vllm/v1/spec_decode/sam.py](../../llm_rl/qwen3/patches/vllm/v1/spec_decode/sam.py)
+代码： [vllm_ascend/spec_decode/sam_proposer.py](../../llm_rl/qwen3/verl-mindspeed/patches/vllm_ascend/spec_decode/sam_proposer.py)
 
 #### `SAMProposer` 类
 `vllm-ascend`后端调用`SAM`能力的适配接口。`vllm_ascend`通过`NPUModelRunner`中的`propose_draft_token_ids`调用此接口。
 
 `SAMProposer`会调用`SAM`提供的状态更新与序列预测能力。
 
-代码：[vllm_ascend/spec_decode/sam_proposer.py](../../llm_rl/qwen3/patches/vllm_ascend/spec_decode/sam_proposer.py)
+代码：[vllm_ascend/spec_decode/sam_proposer.py](../../llm_rl/qwen3/verl-mindspeed/patches/vllm_ascend/spec_decode/sam_proposer.py)
 
 #### 拒绝采样加速
 用高效 tensor 操作替换了`vLLM_Ascend`的`AscendRejectionSampler`实现中的多个 for 循环，提升投机推理的整体效率。
 
-代码：[vllm_ascend/sample/rejection_sampler.py](../../llm_rl/qwen3/patches/vllm_ascend/0009-vllm_ascend-feature-rewrote_rejection_sampler.patch)
+代码：[vllm_ascend/0008-vllm_ascend-feature-tree_rejection_sampler.patch](../../llm_rl/qwen3/verl-mindspeed/patches/vllm_ascend/0008-vllm_ascend-feature-tree_rejection_sampler.patch)
 
 #### batch_size 自适应开关
 在`vllm_ascend`的`NPUModelRunner`添加一个动态开关。每当`NPUModelRunner`取得输入请求，它会检测 batch_size 是否超过阈值，并通过 flag `speculative_decoding_active`来控制投机推理的开启与关闭。
 
-代码：[model_runner_v1.py](../../llm_rl/qwen3/patches/vllm_ascend/0008-vllm_ascend-feature-bs_threshold_for_spec_decode.patch) 
+代码：[0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch](../../llm_rl/qwen3/verl-mindspeed/patches/vllm_ascend/0001-vllm_ascend-feature-bs_threshold_for_spec_decode.patch) 
 
 ## 4. 使能效果
 我们在 Qwen3-32B Dense 模型上，于真实的 RL 后训练场景（DAPO，数学推理数据集上）进行了全面的端到端验证。
