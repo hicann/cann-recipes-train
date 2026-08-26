@@ -119,7 +119,7 @@
 ## 数据集准备
 本样例中GRPO使用的deepscaler数据集准备方法与DeepSeek示例相同，可参考[数据集准备](../../deepseek/README.md#数据集准备)，将处理后的训练数据放在 `data/deepscaler` 目录下。
 
-DAPO使用的dapo-math-17k数据集，验证集使用AIME，可参考[DAPO数据准备](https://github.com/volcengine/verl/blob/main/recipe/dapo/prepare_dapo_data.sh)，将训练数据放在 `data/dapo_math` 目录下。
+DAPO使用的dapo-math-17k数据集，验证集使用AIME，可参考[verl-recipe DAPO](https://github.com/verl-project/verl-recipe/tree/main/dapo) 的数据准备说明，或直接下载 [DAPO-Math-17k](https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k)，将训练数据放在 `data/dapo_math` 目录下。
 
 gsm8k等其他数据集准备方法可参考[verl官方文档](https://verl.readthedocs.io/en/latest/preparation/prepare_data.html)。
 
