@@ -28,7 +28,6 @@
 | `config_registry_medical.py` | torchtitan-npu Qwen3-30B-A3B 医学 SFT 配置 |
 | `run_medical_sft.sh` | 训练启动脚本（复制到 torchtitan-npu 目录后执行） |
 | `prepare_medical_r1_dataset.py` | Medical R1 数据集切分工具 |
-| `figures/training_loss.png` | 训练 Loss 下降曲线 |
 
 ## 环境准备
 

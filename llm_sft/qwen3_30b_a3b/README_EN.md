@@ -24,7 +24,6 @@ The [Medical R1](https://modelscope.cn/datasets/krisfu/delicate_medical_r1_data)
 | `config_registry_medical.py` | torchtitan-npu Qwen3-30B-A3B medical SFT config |
 | `run_medical_sft.sh` | Training launch script (copy to torchtitan-npu dir before running) |
 | `prepare_medical_r1_dataset.py` | Medical R1 dataset split tool |
-| `figures/training_loss.png` | Training loss curve (Epoch 1-5, optimal at step 156) |
 
 ## Environment Setup
 
@@ -224,12 +223,6 @@ step:  150  loss:  0.04411  memory:  52.62GiB(85.88%)  tps:   918    4.462s
 step:  155  loss:  0.04376  memory:  52.62GiB(85.88%)  tps:  1199    3.416s
 step:  156  loss:  0.04450  memory:  52.62GiB(85.88%)  tps:  1244    3.292s   ← end (epoch 5)
 ```
-
-### Training Loss Curve
-
-![Training Loss](figures/training_loss.png)
-
-Based on loss curve analysis, **Epoch 5 (step 156) is the optimal stop**: loss decline flattens after step 150, and training beyond 186 steps (epoch 6+) enters the overfitting regime with no meaningful loss improvement.
 
 ### Model Export
 
