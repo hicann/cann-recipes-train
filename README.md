@@ -194,6 +194,7 @@ flowchart TB
 | 预训练 / 续训练 | 低精度训练（MXFP8 / HiF8） | 通过低精度数据格式兼顾显存、吞吐与训练精度 | [DeepSeek-V3 低精度训练文档](docs/llm_pretrain/deepseek-v3_pre_train_hif8_mxfp8.md) |
 | 预训练 / 续训练 | Swap Optimizer / 优化器状态卸载 | 降低 FSDP2 场景下优化器状态的设备显存占用 | [DeepSeek-V4 训练优化文档](docs/llm_pretrain/deepseek-v4_torchtitan_npu_autofuse.md) |
 | SFT | MindSpeed-LLM SFT 链路适配 | 提供数据处理、权重转换、训练启动的一站式微调链路 | [Qwen3-1.7B SFT](llm_sft/qwen3/README.md) |
+| SFT | Ascend C 算子生成领域全参数微调 | 提供基于 TorchTitan-NPU 的 8 卡 910C（16 die）、CP8 × FSDP2 长序列领域微调 | [Qwen3.6-27B Ascend C 算子生成](llm_sft/qwen36_ascendc/torchtitan/README.md) |
 | RL | TorchAir / npugraph_ex 推理图优化 | 在 rollout 推理阶段降低动态图调度开销，提升长序列 RL 性能 | [Qwen3 长序列 RL 训练优化文档](docs/llm_rl/qwen3_235B_32k_longseq_rl_train_optimization.md) |
 | RL | SAM 无损投机解码 | 在保持训练结果一致性的前提下提升 rollout decode 效率 | [SAM 无损投机推理文档](docs/features/sam_speculative_decoding.md) |
 | RL | Rollout Rebalance 序列级均衡调度 | 缓解 On-Policy rollout 中 response 长尾导致的推理负载不均 | [Rollout Rebalance 文档](docs/features/rollout_rebalance.md) |
@@ -223,6 +224,7 @@ flowchart TB
 | [Qwen3-1.7B SFT](llm_sft/qwen3/README.md) | MindSpeed-LLM SFT 样例，支持一站式平台快速启动 |
 | [Qwen3-1.7B TorchTitan-NPU SFT](llm_sft/qwen3_1.7B_torchtitan/README.md) | 单卡 TorchTitan-NPU SFT 样例，支持一站式平台快速启动 |
 | [Qwen3-30B-A3B 医学 SFT](llm_sft/qwen3_30b_a3b/README.md) | 基于 TorchTitan-NPU 的医学领域多卡全参微调与效果评测样例 |
+| [Qwen3.6-27B Ascend C 算子生成](llm_sft/qwen36_ascendc/torchtitan/README.md) | 基于 TorchTitan-NPU 的 8 卡 910C（16 die）、CP8 × FSDP2 全参数监督微调样例 |
 
 #### 强化学习训练
 
@@ -288,7 +290,8 @@ cann-recipes-train/
 ├── llm_sft/                       # 监督微调样例
 │   ├── qwen3/                     # Qwen3-1.7B MindSpeed-LLM SFT
 │   ├── qwen3_1.7B_torchtitan/     # Qwen3-1.7B TorchTitan-NPU SFT
-│   └── qwen3_30b_a3b/             # Qwen3-30B-A3B 医学 SFT
+│   ├── qwen3_30b_a3b/             # Qwen3-30B-A3B 医学 SFT
+│   └── qwen36_ascendc/            # Qwen3.6-27B Ascend C 算子生成 SFT
 ├── llm_rl/                        # 强化学习训练样例
 │   ├── deepseek/                  # DeepSeek-R1 RL
 │   ├── qwen3/                     # Qwen3 veRL + MindSpeed / TorchTitan 训练
