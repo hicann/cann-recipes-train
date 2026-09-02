@@ -1,0 +1,2589 @@
+diff --git a/.gitignore b/.gitignore
+index 8d75a7457455cc0e731ec9225dab31bf77b74110..f40af10e4add753f2208d45d49fcf1d557de91e9 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -158,3 +158,13 @@ mindspeed
+ /tests/st/run_logs/
+
+ fusion_result.json
++.claude/
++.opencode/
++
++cache_dir
++ckpt
++outputs
++data
++logs
++tmp
++MindSpeed
+\ No newline at end of file
+diff --git a/checkpoint/vlm_model/converters/qwen3_5.py b/checkpoint/vlm_model/converters/qwen3_5.py
+index a83968232247ab73e5cdbb2ababd00f7ce129fc4..b395255ea74c762547c29a0005f89978fa89e3e1 100644
+--- a/checkpoint/vlm_model/converters/qwen3_5.py
++++ b/checkpoint/vlm_model/converters/qwen3_5.py
+@@ -1,5 +1,6 @@
+ from typing import List, Dict
+ from pathlib import Path
++import shutil
+ import re
+ import json
+ import torch
+@@ -9,6 +10,7 @@ from checkpoint.common.converter import Converter
+ from checkpoint.common.merge_dcp_to_hf import merge_dcp_to_hf_sharded
+ from checkpoint.common.hf_to_dcp import hf_to_dcp_sharded
+ from checkpoint.common.dcp_utils import append_state_dict_to_dcp
++from checkpoint.common.permissions import set_directory_permissions
+ from checkpoint.vlm_model.converters.moe_expert import merge_moe_expert_weights, ConfigType
+
+
+@@ -218,6 +220,33 @@ class Qwen35Converter(Converter):
+                 weight_map = json.load(f)["weight_map"]
+             update_safetensors_files(Path(save_hf_dir), mtp_state_dict, weight_map)
+
++        self._copy_origin_tokenizer_assets(Path(origin_hf_dir), Path(save_hf_dir))
++
++    @staticmethod
++    def _copy_origin_tokenizer_assets(origin_hf_dir: Path, save_hf_dir: Path):
++        tokenizer_asset_names = (
++            "tokenizer_config.json",
++            "tokenizer.json",
++            "vocab.json",
++            "merges.txt",
++            "chat_template.jinja",
++            "chat_template.json",
++            "special_tokens_map.json",
++            "added_tokens.json",
++            "tokenizer.model",
++            "spiece.model",
++        )
++
++        copied = False
++        for filename in tokenizer_asset_names:
++            source_path = origin_hf_dir / filename
++            if source_path.is_file():
++                shutil.copy2(source_path, save_hf_dir / filename)
++                copied = True
++
++        if copied:
++            set_directory_permissions(save_hf_dir)
++
+     def _load_and_split_mtp_experts(
+         self,
+         dcp_dir: str,
+diff --git a/cvt_ckpt_dcp2hf.sh b/cvt_ckpt_dcp2hf.sh
+new file mode 100644
+index 00000000..23d08091
+--- /dev/null
++++ b/cvt_ckpt_dcp2hf.sh
+@@ -0,0 +1,20 @@
++#!/usr/bin/env bash
++
++# 待转换的dcp权重目录结构样例为：
++# ———— xxxxxxx
++#   |—— release
++#   |—— latest_checkpointed_iteration.txt
++
++if [ "$#" -ne 2 ]; then
++  echo "Usage: bash $0 <save_hf_dir> <dcp_dir>"
++  exit 1
++fi
++
++save_hf_dir="$1"
++dcp_dir="$2"
++
++mm-convert Qwen35Converter dcp_to_hf \
++--save_hf_dir "${save_hf_dir}" \
++--dcp_dir "${dcp_dir}" \
++--origin_hf_dir ckpt/hf_path/Qwen3.6-27B \
++--to_bf16 false
+diff --git a/cvt_ckpt_dcp2hf_batch.sh b/cvt_ckpt_dcp2hf_batch.sh
+new file mode 100644
+index 00000000..fec969a9
+--- /dev/null
++++ b/cvt_ckpt_dcp2hf_batch.sh
+@@ -0,0 +1,197 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# Convert all numeric iter_* checkpoints, or merge LoRA adapter checkpoints:
++#   bash cvt_ckpt_dcp2hf_batch.sh <checkpoint_dir> <save_hf_dir> [config]
++# Use LORA_MERGE_DEVICE=cpu to merge LoRA adapters on CPU instead of NPU.
++# Use CHECKPOINT_POSTPROCESS_DRY_RUN=1 to preview discovered artifacts and outputs.
++
++config=""
++if [ "$#" -eq 2 ] || [ "$#" -eq 3 ]; then
++  dcp_dir="$1"
++  save_hf_dir="$2"
++  if [ "$#" -eq 3 ]; then
++    config="$3"
++  fi
++else
++  echo "Usage: bash $0 <checkpoint_dir> <save_hf_dir> [config]" >&2
++  exit 2
++fi
++
++dcp_dir="${dcp_dir%/}"
++save_hf_dir="${save_hf_dir%/}"
++latest_file="${dcp_dir}/latest_checkpointed_iteration.txt"
++script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++single_convert_script="${script_dir}/cvt_ckpt_dcp2hf.sh"
++lora_merge_script="${script_dir}/checkpoint/common/merge_lora_safetensors_to_base.py"
++lora_merge_device="${LORA_MERGE_DEVICE:-npu}"
++postprocess_dry_run="${CHECKPOINT_POSTPROCESS_DRY_RUN:-0}"
++
++if [ ! -d "${dcp_dir}" ]; then
++  echo "Checkpoint dir does not exist: ${dcp_dir}"
++  exit 1
++fi
++if [ "${postprocess_dry_run}" != "0" ] && [ "${postprocess_dry_run}" != "1" ]; then
++  echo "CHECKPOINT_POSTPROCESS_DRY_RUN must be '0' or '1', got: ${postprocess_dry_run}"
++  exit 1
++fi
++
++latest_backup=""
++latest_existed=0
++
++restore_latest() {
++  if [ -z "${latest_backup}" ]; then
++    return
++  fi
++  if [ "${latest_existed}" -eq 1 ]; then
++    cp "${latest_backup}" "${latest_file}"
++  else
++    rm -f "${latest_file}"
++  fi
++  rm -f "${latest_backup}"
++}
++
++shopt -s nullglob
++iter_dirs=("${dcp_dir}"/iter_[0-9]*)
++lora_adapter_files=("${dcp_dir}"/lora_adapter_iteration_*.safetensors)
++
++if [ "${#iter_dirs[@]}" -eq 0 ] && [ "${#lora_adapter_files[@]}" -eq 0 ]; then
++  echo "No iter_* directories or LoRA adapter files found under: ${dcp_dir}"
++  exit 1
++fi
++
++dcp_converted_count=0
++if [ "${#iter_dirs[@]}" -gt 0 ] && [ ! -f "${single_convert_script}" ]; then
++  echo "Single convert script does not exist: ${single_convert_script}"
++  exit 1
++fi
++if [ "${#iter_dirs[@]}" -gt 0 ] && [ "${postprocess_dry_run}" -eq 0 ]; then
++  latest_backup="$(mktemp)"
++  if [ -f "${latest_file}" ]; then
++    cp "${latest_file}" "${latest_backup}"
++    latest_existed=1
++  fi
++  trap restore_latest EXIT
++fi
++
++for iter_dir in "${iter_dirs[@]}"; do
++  if [ ! -d "${iter_dir}" ]; then
++    continue
++  fi
++
++  iter_name="$(basename "${iter_dir}")"
++  iter_value="${iter_name#iter_}"
++  if [[ ! "${iter_value}" =~ ^[0-9]+$ ]]; then
++    echo "Skip non-numeric iter dir: ${iter_dir}"
++    continue
++  fi
++
++  iter_number="$(printf "%s" "${iter_value}" | sed 's/^0*//')"
++  if [ -z "${iter_number}" ]; then
++    iter_number=0
++  fi
++
++  save_hf_iter_dir="${save_hf_dir}_${iter_name}"
++  echo "Converting ${iter_dir} -> ${save_hf_iter_dir}"
++  if [ "${postprocess_dry_run}" -eq 0 ]; then
++    printf "%s\n" "${iter_number}" > "${latest_file}"
++    bash "${single_convert_script}" "${save_hf_iter_dir}" "${iter_dir}"
++  fi
++  dcp_converted_count=$((dcp_converted_count + 1))
++done
++
++lora_merged_count=0
++if [ "${#lora_adapter_files[@]}" -gt 0 ]; then
++  if [ -z "${config}" ]; then
++    echo "A config file is required to merge LoRA adapters under: ${dcp_dir}"
++    exit 1
++  fi
++  if [ ! -f "${config}" ]; then
++    echo "Config file does not exist: ${config}"
++    exit 1
++  fi
++  if [ ! -f "${lora_merge_script}" ]; then
++    echo "LoRA merge script does not exist: ${lora_merge_script}"
++    exit 1
++  fi
++  if [ "${lora_merge_device}" != "cpu" ] && [ "${lora_merge_device}" != "npu" ]; then
++    echo "LORA_MERGE_DEVICE must be 'cpu' or 'npu', got: ${lora_merge_device}"
++    exit 1
++  fi
++
++  lora_config_output="$(
++    python -c '
++import sys
++import yaml
++
++with open(sys.argv[1], encoding="utf-8") as config_file:
++    config = yaml.safe_load(config_file) or {}
++
++base_hf_dir = config.get("model", {}).get("model_name_or_path")
++lora_config = config.get("training", {}).get("lora", {})
++lora_alpha = lora_config.get("alpha")
++lora_rank = lora_config.get("rank")
++
++if not isinstance(base_hf_dir, str) or not base_hf_dir.strip():
++    raise SystemExit(f"model.model_name_or_path is missing or empty in config: {sys.argv[1]}")
++if not isinstance(lora_alpha, int) or isinstance(lora_alpha, bool) or lora_alpha <= 0:
++    raise SystemExit(f"training.lora.alpha must be a positive integer in config: {sys.argv[1]}")
++if not isinstance(lora_rank, int) or isinstance(lora_rank, bool) or lora_rank <= 0:
++    raise SystemExit(f"training.lora.rank must be a positive integer in config: {sys.argv[1]}")
++
++print(base_hf_dir)
++print(lora_alpha)
++print(lora_rank)
++' "${config}"
++  )"
++  mapfile -t lora_config_values <<< "${lora_config_output}"
++  if [ "${#lora_config_values[@]}" -ne 3 ]; then
++    echo "Failed to parse base HF directory and LoRA parameters from: ${config}"
++    exit 1
++  fi
++
++  base_hf_dir="${lora_config_values[0]}"
++  lora_alpha="${lora_config_values[1]}"
++  lora_rank="${lora_config_values[2]}"
++
++  if [ ! -d "${base_hf_dir}" ]; then
++    echo "Base HF directory from config does not exist: ${base_hf_dir}"
++    exit 1
++  fi
++
++  for lora_adapter_file in "${lora_adapter_files[@]}"; do
++    lora_adapter_name="$(basename "${lora_adapter_file}")"
++    iteration_value="${lora_adapter_name#lora_adapter_iteration_}"
++    iteration_value="${iteration_value%.safetensors}"
++    if [[ ! "${iteration_value}" =~ ^[0-9]+$ ]]; then
++      echo "Skip LoRA adapter with non-numeric iteration: ${lora_adapter_file}"
++      continue
++    fi
++
++    iteration_number="$(printf "%s" "${iteration_value}" | sed 's/^0*//')"
++    if [ -z "${iteration_number}" ]; then
++      iteration_number=0
++    fi
++
++    save_merged_hf_dir="${dcp_dir}-merged-hf-iter-${iteration_number}"
++    echo "Merging ${lora_adapter_file} with ${base_hf_dir} -> ${save_merged_hf_dir}"
++    if [ "${postprocess_dry_run}" -eq 0 ]; then
++      python "${lora_merge_script}" \
++        --base_hf_dir "${base_hf_dir}" \
++        --lora_safetensors "${lora_adapter_file}" \
++        --save_merged_hf_dir "${save_merged_hf_dir}" \
++        --lora_alpha "${lora_alpha}" \
++        --lora_r "${lora_rank}" \
++        --device "${lora_merge_device}"
++    fi
++    lora_merged_count=$((lora_merged_count + 1))
++  done
++fi
++
++if [ "${dcp_converted_count}" -eq 0 ] && [ "${lora_merged_count}" -eq 0 ]; then
++  echo "No valid checkpoints processed under: ${dcp_dir}"
++  exit 1
++fi
++
++echo "Converted ${dcp_converted_count} DCP checkpoint(s)."
++echo "Merged ${lora_merged_count} LoRA adapter checkpoint(s)."
+diff --git a/cvt_ckpt_hf2dcp.sh b/cvt_ckpt_hf2dcp.sh
+new file mode 100644
+index 00000000..6b80cb1b
+--- /dev/null
++++ b/cvt_ckpt_hf2dcp.sh
+@@ -0,0 +1,10 @@
++#!/usr/bin/env bash
++
++mm-convert Qwen35Converter hf_to_dcp \
++--hf_dir ckpt/hf_path/Qwen3.6-27B \
++--dcp_dir ckpt/dcp_path/Qwen3.6-27B
++
++# 转换后的目录结构为：
++# ———— xxxxxxx
++#   |—— release
++#   |—— latest_checkpointed_iteration.txt
+\ No newline at end of file
+diff --git a/cvt_data_format_jsonl2json.sh b/cvt_data_format_jsonl2json.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..91550575c717f22cc5c3cae95e2709a699fe1b5d
+--- /dev/null
++++ b/cvt_data_format_jsonl2json.sh
+@@ -0,0 +1,195 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++
++# Default data paths. They can be overridden by passing either:
++#   bash cvt_data_format_jsonl2json.sh <jsonl_path> <json_path>
++# or, for recursive batch conversion (quote the glob patterns):
++#   bash cvt_data_format_jsonl2json.sh \
++#     'data/xxx/jsonl/**/*.jsonl' \
++#     'data/xxx/json/**/*.json'
++#
++# In batch mode, the directory hierarchy below the non-glob input root is
++# preserved below the non-glob output root. The output argument can also be a
++# directory such as 'data/qa/0730/json'.
++# Supported JSONL records use either instruction/input/output or prompt/response.
++
++JSONL_DATA_PATH="${1:-${JSONL_DATA_PATH}}"
++JSON_DATA_PATH="${2:-${JSON_DATA_PATH}}"
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++
++python3 - "${SCRIPT_DIR}" "${JSONL_DATA_PATH}" "${JSON_DATA_PATH}" <<'PY'
++import glob
++import json
++import sys
++from pathlib import Path
++
++
++def resolve_path(root_dir, raw_path):
++    path = Path(raw_path)
++    if path.is_absolute():
++        return path
++    return Path(root_dir) / path
++
++
++def glob_root(pattern):
++    """Return the static path prefix before the first glob component."""
++    static_parts = []
++    for part in pattern.parts:
++        if glob.has_magic(part):
++            break
++        static_parts.append(part)
++
++    if not static_parts:
++        return Path(".")
++    return Path(*static_parts)
++
++
++def to_text(value):
++    if value is None:
++        return ""
++    if isinstance(value, str):
++        return value
++    return str(value)
++
++
++def build_user_content(record):
++    instruction = to_text(record.get("instruction"))
++    input_content = to_text(record["input"])
++    if instruction.strip():
++        if input_content:
++            return instruction + "\n" + input_content
++        return instruction
++    return input_content
++
++
++def build_message_contents(record, jsonl_path, line_no):
++    """Return user and assistant text for either supported JSONL schema."""
++    has_prompt = "prompt" in record
++    has_response = "response" in record
++    if has_prompt or has_response:
++        for required_key in ("prompt", "response"):
++            if required_key not in record:
++                raise ValueError(
++                    f"{jsonl_path}:{line_no}: missing required key "
++                    f"'{required_key}' for prompt-response format"
++                )
++        return to_text(record["prompt"]), to_text(record["response"])
++
++    for required_key in ("input", "output"):
++        if required_key not in record:
++            raise ValueError(f"{jsonl_path}:{line_no}: missing required key '{required_key}'")
++    return build_user_content(record), to_text(record["output"])
++
++
++def convert_jsonl_to_json(jsonl_path, json_path):
++    converted = []
++    with jsonl_path.open("r", encoding="utf-8") as fin:
++        for line_no, line in enumerate(fin, start=1):
++            stripped = line.strip()
++            if not stripped:
++                continue
++
++            try:
++                record = json.loads(stripped)
++            except json.JSONDecodeError as exc:
++                raise ValueError(f"{jsonl_path}:{line_no}: invalid JSONL record: {exc}") from exc
++
++            if not isinstance(record, dict):
++                raise ValueError(f"{jsonl_path}:{line_no}: JSONL record must be an object")
++            user_content, assistant_content = build_message_contents(record, jsonl_path, line_no)
++
++            converted.append(
++                {
++                    "messages": [
++                        {
++                            "content": user_content,
++                            "role": "user",
++                        },
++                        {
++                            "content": assistant_content,
++                            "role": "assistant",
++                        },
++                    ],
++                    "images": [],
++                }
++            )
++
++    json_path.parent.mkdir(parents=True, exist_ok=True)
++    with json_path.open("w", encoding="utf-8") as fout:
++        json.dump(converted, fout, ensure_ascii=False, indent=2)
++        fout.write("\n")
++
++    return len(converted)
++
++
++def convert_matching_jsonl_files(input_pattern, output_pattern):
++    input_root = glob_root(input_pattern)
++    if not input_root.is_dir():
++        raise NotADirectoryError(f"Input glob root is not a directory: {input_root}")
++
++    if glob.has_magic(str(output_pattern)):
++        output_root = glob_root(output_pattern)
++        if output_pattern.suffix.lower() != ".json":
++            raise ValueError(
++                "Output glob must describe JSON files, for example "
++                "'data/qa/0730/json/**/*.json'"
++            )
++    else:
++        output_root = output_pattern
++        if output_root.exists() and not output_root.is_dir():
++            raise NotADirectoryError(
++                f"Batch output path must be a directory or glob pattern: {output_root}"
++            )
++
++    matched_paths = sorted(
++        {
++            Path(matched_path)
++            for matched_path in glob.iglob(str(input_pattern), recursive=True)
++            if Path(matched_path).is_file()
++            and Path(matched_path).suffix.lower() == ".jsonl"
++        }
++    )
++    if not matched_paths:
++        raise FileNotFoundError(f"No JSONL files matched input pattern: {input_pattern}")
++
++    total_records = 0
++    for jsonl_path in matched_paths:
++        relative_path = jsonl_path.relative_to(input_root)
++        json_path = (output_root / relative_path).with_suffix(".json")
++        count = convert_jsonl_to_json(jsonl_path, json_path)
++        total_records += count
++        print(f"Converted {count} records: {jsonl_path} -> {json_path}")
++
++    print(
++        f"Converted {len(matched_paths)} files and {total_records} records "
++        f"into: {output_root}"
++    )
++
++
++def main():
++    if len(sys.argv) != 4:
++        raise SystemExit(
++            "Usage: cvt_data_format_jsonl2json.sh "
++            "<jsonl_path_or_glob> <json_path_or_glob>"
++        )
++
++    root_dir, jsonl_raw_path, json_raw_path = sys.argv[1:]
++    jsonl_path = resolve_path(root_dir, jsonl_raw_path)
++    json_path = resolve_path(root_dir, json_raw_path)
++
++    if glob.has_magic(str(jsonl_path)):
++        convert_matching_jsonl_files(jsonl_path, json_path)
++        return
++
++    if not jsonl_path.is_file():
++        raise FileNotFoundError(f"JSONL file not found: {jsonl_path}")
++
++    count = convert_jsonl_to_json(jsonl_path, json_path)
++    print(f"Converted {count} records: {jsonl_path} -> {json_path}")
++
++
++if __name__ == "__main__":
++    main()
++PY
+diff --git a/docs/zh/features/fsdp2_developer_migration_guide.md b/docs/zh/features/fsdp2_developer_migration_guide.md
+index 3dcdef9584525d20eb15125b10a5f03d08a9f405..44c762fa72e30c6f785d947d9d1c22b20bda422d 100644
+--- a/docs/zh/features/fsdp2_developer_migration_guide.md
++++ b/docs/zh/features/fsdp2_developer_migration_guide.md
+@@ -354,11 +354,14 @@ meta 初始化的关键语义：
+ 保存相关字段：
+
+ - `training.save`：检查点保存根目录；为空时不保存。
+-- `training.save_interval`：按迭代步间隔保存。
++- `training.train_iters` / `training.train_epochs`：标准 FSDP2 Trainer 可二选一控制总训练量。设置 `train_epochs` 时会在 dataloader 构建后覆盖 `train_iters`；按 epoch 训练要求 dataloader 长度可确定。FunASR 使用其专用的 `max_epochs` 与 `train_iters`。
++- `training.save_interval`：使用 `train_iters` 时按 optimizer step 间隔保存；使用 `train_epochs` 时自动按 epoch 间隔保存，并在内部换算为 optimizer step 保存点。数据量不能被 global batch size 整除时，保存点会向上取整到跨过 epoch 边界后的第一个 optimizer step。
+ - `training.no_save_optim` / `training.no_save_rng`：控制是否保存优化器和随机数状态。
+ - `training.no_load_optim` / `training.no_load_rng`：控制是否恢复优化器和随机数状态。
+ - `training.load_strict`：传给 DCP load planner；调试迁移时可先放宽，正式训练应尽量保持严格匹配。
+
++按 epoch 续训时应保持数据集长度、梯度累积步数和并行配置不变；这些条件变化后，原 checkpoint 中的 iteration 与 dataloader 状态不再对应同一 epoch 位置。
++
+ ## 7. 启动脚本
+
+ 启动脚本通常放在：
+diff --git a/docs/zh/features/lora_finetune_fsdp2.md b/docs/zh/features/lora_finetune_fsdp2.md
+index ca3e72fb1b8209ff1d0b2e9872376cdb15bf1a61..bd8ea3ea44a348be7e2173d82062c8f419b1b2fd 100644
+--- a/docs/zh/features/lora_finetune_fsdp2.md
++++ b/docs/zh/features/lora_finetune_fsdp2.md
+@@ -52,6 +52,7 @@ training:
+     dropout: 0.0
+     init_lora_weights: true
+     pretrained_lora_path: null
++    save_full_model: false
+ ```
+
+ ### 参数说明
+@@ -65,6 +66,7 @@ training:
+ | `dropout` | float | `0.0` | LoRA 层的 dropout 比例，取值范围 `[0, 1)`                                                                                                                                 |
+ | `init_lora_weights` | bool \| str | `True` | 权重初始化方式。`True`；`False`；或选择以下字符串值：`"gaussian"`, `"eva"`, `"olora"`, `"pissa"`, `"pissa_niter_[number of iters]"`, `"corda"`, `"loftq"`, `"orthogonal"` |
+ | `pretrained_lora_path` | str | `null` | 预训练 LoRA 权重路径（可选），支持 `.safetensors` 和 `.pt/.bin` 格式                                                                                                              |
++| `save_full_model` | bool | `false` | 纯 LoRA 训练时是否额外保存包含冻结基座权重的完整 DCP。默认仅保存 adapter，避免重复保存未变化的基座权重                                                                                  |
+
+ ### target_modules 配置说明
+
+@@ -115,21 +117,32 @@ target_modules:
+ training:
+   lora:
+     enable: true
+-    pretrained_lora_path: ./save_path/iter_xxx  # 替换为 LoRA 权重保存路径
++    pretrained_lora_path: ./save_path/lora_adapter_iteration_xxx.safetensors
+ ```
+
+ ## 权重保存
+
+ ### 仅保存 LoRA 权重
+
+-训练过程中仅保存 LoRA 适配器权重，保存格式为 safetensors，保存的文件结构：
++纯 LoRA 训练过程中默认仅保存 LoRA 适配器权重，保存格式为 safetensors，不再重复保存冻结的基座模型权重。保存的文件结构：
+
+ ```bash
+ save_path/
+-├── lora_adapter.safetensors
++├── lora_adapter_iteration_20.safetensors
++├── lora_adapter_iteration_40.safetensors
+ └── ...
+ ```
+
++框架会检查模型的实际可训练参数：只有全部可训练参数均为 LoRA adapter 时才跳过完整模型保存。如果还解冻了 `lm_head` 等非 LoRA 参数，仍会自动保存完整 DCP，防止这些权重丢失。
++
++如果需要保留包含基座权重的旧版完整 checkpoint 行为，可显式配置：
++
++```yaml
++training:
++  lora:
++    save_full_model: true
++```
++
+ ## 启动训练
+
+ 配置完成后，使用与全量微调相同的启动脚本即可：
+@@ -152,7 +165,7 @@ python merge_lora_safetensors_to_base.py \
+
+ ## lora断点续训
+
+-断点续训时，yaml配置文件中`load`路径需要指向上次训练保存的 checkpoint 路径。断点续训前一次的训练必须配置`no_save_optim`、`no_save_rng`为false，断点续训时`no_load_optim`、`no_load_rng`设置为false，才能恢复优化器状态。断点续训完成后可使用权重转换脚本，合并lora权重到HuggingFace权重。
++默认的 adapter-only checkpoint 可通过 `pretrained_lora_path` 加载，但不会恢复优化器、学习率调度器和 RNG 状态。如果需要严格断点续训，应设置 `save_full_model: true`；同时保存时将 `no_save_optim`、`no_save_rng` 设为 `false`，恢复时将 `no_load_optim`、`no_load_rng` 设为 `false`，并让 `load` 指向上次保存的完整 checkpoint 路径。
+
+ ## 注意事项
+
+diff --git a/examples/qwen3_6/README.md b/examples/qwen3_6/README.md
+index 62e49d6d..0b16d97f 100644
+--- a/examples/qwen3_6/README.md
++++ b/examples/qwen3_6/README.md
+@@ -50,7 +51,8 @@ commit_id=7d9754a
+ 拉取MindSpeed MM代码仓，并进入代码仓根目录：
+
+ ```bash
+ git clone https://gitcode.com/Ascend/MindSpeed-MM.git
+ cd MindSpeed-MM
++git checkout aaed711fd4750857f104e8d832766ed915ff9ef0
+ ```
+
+@@ -59,6 +60,9 @@ cd MindSpeed-MM
+ ```bash
+ bash scripts/install.sh --msid eb10b92
+ pip install transformers==5.2.0 triton-ascend==3.2.0 accelerate==1.2.0
++
++# for CANN9.0.0
++pip install triton-ascend==3.2.1 --extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+ ```
+
+ ---
+@@ -254,6 +258,15 @@ dataset:
+ 【模型保存加载及日志信息配置】
+
+ 根据实际情况配置`xxx_config.yaml`的`training`参数，包括保存路径以及保存间隔`save`、`save_interval`
++训练时可二选一配置总步数或总 epoch 数：使用`train_iters`时，`save_interval`表示 optimizer step；使用`train_epochs`时，`save_interval`自动表示 epoch，框架会在构建 dataloader 后统一换算为 optimizer step。例如：
++
++```yaml
++training:
++  train_epochs: 4
++  save_interval: 1  # 每个 epoch 保存一次
++```
++
++字段名为`train_epochs`，不是`train_epoches`。按 epoch 训练要求 dataloader 长度可确定；流式/IterableDataset 请继续使用`train_iters`。
+ 根据实际情况配置`xxx_config.yaml`中的`init_from_hf_path`参数，该参数表示初始权重的加载路径。
+
+ 【ulysses-cp并行配置】
+diff --git a/examples/qwen3_6/finetune_qwen3_6_27B.sh b/examples/qwen3_6/finetune_qwen3_6_27B.sh
+index 71505901..2417829f 100644
+--- a/examples/qwen3_6/finetune_qwen3_6_27B.sh
++++ b/examples/qwen3_6/finetune_qwen3_6_27B.sh
+@@ -1,5 +1,12 @@
++#!/usr/bin/env bash
++set -o pipefail
++
+ # 根据实际情况修改 ascend-toolkit 路径
+-source /usr/local/Ascend/cann/set_env.sh
++# source /usr/local/Ascend/cann/set_env.sh
++
++# NOTICE: setuptools < 82.0.0
++# NOTICE: triton-ascend==3.2.0  # for CANN 8.5.0
++# NOTICE: triton-ascend==3.2.1  # for CANN 9.0.0
+ export NON_MEGATRON=true
+ export MULTI_STREAM_MEMORY_REUSE=2
+ export TASK_QUEUE_ENABLE=2
+@@ -9,26 +16,52 @@ export CPU_AFFINITY_CONF=1
+ export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+ export HCCL_CONNECT_TIMEOUT=7200
+
+-NPUS_PER_NODE=16
+-MASTER_ADDR=localhost
+-MASTER_PORT=6000
++NPUS_PER_NODE="${NPUS_PER_NODE:-16}"
++if [[ ! "${NPUS_PER_NODE}" =~ ^[1-9][0-9]*$ ]]; then
++    echo "NPUS_PER_NODE must be a positive integer, got: ${NPUS_PER_NODE}" >&2
++    exit 2
++fi
+ NNODES=1
+-NODE_RANK=0
+ WORLD_SIZE=$(($NPUS_PER_NODE*$NNODES))
+
+-DISTRIBUTED_ARGS="
+-    --nproc_per_node $NPUS_PER_NODE \
+-    --nnodes $NNODES \
+-    --node_rank $NODE_RANK \
+-    --master_addr $MASTER_ADDR \
+-    --master_port $MASTER_PORT
+-"
++DISTRIBUTED_ARGS=(
++    --nproc_per_node "${NPUS_PER_NODE}"
++    --nnodes "${NNODES}"
++)
++
++if [ -n "${MASTER_PORT:-}" ]; then
++    if [[ ! "${MASTER_PORT}" =~ ^[1-9][0-9]*$ ]] || (( MASTER_PORT > 65535 )); then
++        echo "MASTER_PORT must be an integer between 1 and 65535, got: ${MASTER_PORT}" >&2
++        exit 2
++    fi
++    MASTER_ADDR="${MASTER_ADDR:-localhost}"
++    DISTRIBUTED_ARGS+=(
++        --node_rank 0
++        --master_addr "${MASTER_ADDR}"
++        --master_port "${MASTER_PORT}"
++    )
++    echo "Distributed rendezvous: static (${MASTER_ADDR}:${MASTER_PORT})"
++else
++    DISTRIBUTED_ARGS+=(--standalone)
++    echo "Distributed rendezvous: standalone (auto-selected free port)"
++fi
++
++if [ "$#" -ne 1 ]; then
++    echo "Usage: bash $0 <config>" >&2
++    exit 2
++fi
++
++CONFIG="$1"
+
+-logfile=$(date +%Y%m%d)_$(date +%H%M%S)
++config_name=$(basename "$CONFIG" .yaml)
++logfile="$(date +%Y%m%d)_$(date +%H%M%S)_${config_name}"
+ mkdir -p logs
+-torchrun $DISTRIBUTED_ARGS mindspeed_mm/fsdp/train/trainer.py \
+-    examples/qwen3_6/qwen3_6_27B_config.yaml \
+-    2>&1 | tee logs/train_${logfile}.log
++if ! torchrun "${DISTRIBUTED_ARGS[@]}" mindspeed_mm/fsdp/train/trainer.py \
++    "$CONFIG" \
++    2>&1 | tee logs/train_${logfile}.log; then
++    echo "Training failed; checkpoint conversion will not be started." >&2
++    exit 1
++fi
+
+ STEP_TIME=`grep "elapsed time per iteration" logs/train_${logfile}.log | awk -F 'elapsed time per iteration [(]ms[)]:' '{print$2}' | awk -F '|' '{print$1}' | head -n 200 | tail -n 100 | awk '{sum+=$1} END {if (NR != 0) printf("%.1f",sum/NR)}'`
+ GBS=`grep "global batch size" logs/train_${logfile}.log | awk -F 'global batch size:' '{print$2}' | awk -F '|' '{print$1}' | head -n 1 | awk '{print $1}'`
+diff --git a/mindspeed_mm/fsdp/checkpoint/dcp_checkpointer.py b/mindspeed_mm/fsdp/checkpoint/dcp_checkpointer.py
+index 8f78a1ac73f553b3266d59830248a353902d1297..e3aebe2665d4e3c81dd943e2fd7817653afc080e 100644
+--- a/mindspeed_mm/fsdp/checkpoint/dcp_checkpointer.py
++++ b/mindspeed_mm/fsdp/checkpoint/dcp_checkpointer.py
+@@ -33,6 +33,7 @@ from mindspeed_mm.fsdp.checkpoint.utils import (
+     restore_base_layer_keys,
+ )
+ from mindspeed_mm.fsdp.checkpoint.load_utils import rank0_load_and_broadcast_weights
++from mindspeed_mm.fsdp.utils.dtype import get_dtype
+
+
+ logger = logging.getLogger(__name__)
+@@ -41,6 +42,29 @@ _EXTRA_STATE_FORMAT = "extra_state_rank_{}.pt"
+ _EXTRA_STATE_DIR = "extra_state"
+
+
++def _cast_floating_tensors(value, dtype):
++    if dtype is None:
++        return value
++    value_dtype = getattr(value, "dtype", None)
++    if value_dtype is not None and getattr(value_dtype, "is_floating_point", False):
++        return value.to(dtype=dtype)
++    if isinstance(value, dict):
++        return {key: _cast_floating_tensors(item, dtype) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_cast_floating_tensors(item, dtype) for item in value]
++    if isinstance(value, tuple):
++        return tuple(_cast_floating_tensors(item, dtype) for item in value)
++    return value
++
++
++def _resolve_save_dtype(save_dtype):
++    if save_dtype is None:
++        return None
++    if isinstance(save_dtype, torch.dtype):
++        return save_dtype
++    return get_dtype(save_dtype)
++
++
+ class ModelState(Stateful):
+     """
+     A wrapper around a model to make it stateful.
+@@ -48,8 +72,9 @@ class ModelState(Stateful):
+         model (Model): model to wrap.
+     """
+
+-    def __init__(self, model):
++    def __init__(self, model, save_dtype=None):
+         self.model = model
++        self.save_dtype = _resolve_save_dtype(save_dtype)
+
+         # Determine whether this is EP+FSDP2 case
+         # If so, we need to restore EP-dim before saving to DCP
+@@ -60,7 +85,7 @@ class ModelState(Stateful):
+     @torch.no_grad()
+     def state_dict(self):
+         model_state_dict = get_model_state_dict(model=self.model)
+-        return model_state_dict
++        return _cast_floating_tensors(model_state_dict, self.save_dtype)
+
+     @torch.no_grad()
+     def load_state_dict(self, state_dict):
+@@ -154,6 +179,7 @@ class DistributedCheckpointer(CheckpointerBase):
+         save_async: bool = False,
+         iteration: int = None,
+         storage_writer: Optional[FileSystemWriter] = None,
++        save_dtype: Optional[str] = None,
+     ) -> None:
+         """
+         save training state to distributed checkpoint
+@@ -175,7 +201,7 @@ class DistributedCheckpointer(CheckpointerBase):
+         # saving extra_state first to gurantee that every saved model/optimizer ckpts have their extra_state saved before them
+         cls._save_extra_state(checkpoint_dir=checkpoint_dir, state=state)
+
+-        save_state = {"model": ModelState(state["model"])}
++        save_state = {"model": ModelState(state["model"], save_dtype=save_dtype)}
+         if "optimizer" in state:
+             save_state["optimizer"] = OptimizerState(model=state["model"], optimizer=state["optimizer"])  # type: ignore[index]
+
+diff --git a/mindspeed_mm/fsdp/data/data_utils/func_utils/convert.py b/mindspeed_mm/fsdp/data/data_utils/func_utils/convert.py
+index ab4924a50f26eb1c973a683cfd55943964aee3d2..c736b8b0630cd63d0afe97d171ecd9a49797904d 100644
+--- a/mindspeed_mm/fsdp/data/data_utils/func_utils/convert.py
++++ b/mindspeed_mm/fsdp/data/data_utils/func_utils/convert.py
+@@ -681,6 +681,14 @@ class DataArguments(BaseArguments):
+         default=None,
+         metadata={"help": "Enable sequences packing in training. Will automatically enable in pre-training."},
+     )
++    shuffle_before_packing: bool = field(
++        default=False,
++        metadata={"help": "Globally shuffle the non-streaming training dataset before offline SFT packing."},
++    )
++    shuffle_before_packing_seed: int = field(
++        default=42,
++        metadata={"help": "Random seed used when shuffling the training dataset before SFT packing."},
++    )
+     neat_packing: bool = field(
+         default=False,
+         metadata={"help": "Enable sequence packing without cross-attention."},
+diff --git a/mindspeed_mm/fsdp/data/datasets/huggingface/qwen2vl_dataset.py b/mindspeed_mm/fsdp/data/datasets/huggingface/qwen2vl_dataset.py
+index 358fca47f8dd4bf9f81ca4520a9052de8c4112c5..bbdc5f4c29c19448821857f07f51e0ff9f6ed8bd 100644
+--- a/mindspeed_mm/fsdp/data/datasets/huggingface/qwen2vl_dataset.py
++++ b/mindspeed_mm/fsdp/data/datasets/huggingface/qwen2vl_dataset.py
+@@ -29,6 +29,34 @@ from mindspeed_mm.fsdp.utils.register import data_register
+ logger = get_logger(__name__)
+
+
++def _maybe_shuffle_before_packing(dataset, data_args, load_from_cache_file=True):
++    """Globally shuffle the training dataset before offline SFT packing when requested."""
++    should_shuffle = (
++        data_args.stage == "sft"
++        and data_args.packing
++        and data_args.shuffle_before_packing
++    )
++    if not should_shuffle:
++        return dataset
++
++    if data_args.streaming:
++        raise ValueError(
++            "shuffle_before_packing requires a non-streaming dataset because streaming datasets "
++            "only support buffered, approximate shuffling."
++        )
++    if data_args.preprocess_on_fly:
++        raise ValueError("shuffle_before_packing requires offline preprocessing (preprocess_on_fly=false).")
++
++    logger.info(
++        "Globally shuffling the training dataset before SFT packing with seed %s.",
++        data_args.shuffle_before_packing_seed,
++    )
++    return dataset.shuffle(
++        seed=data_args.shuffle_before_packing_seed,
++        load_from_cache_file=load_from_cache_file,
++    )
++
++
+ class DistributedIterableDataset(IterableDataset):
+     def __init__(self, dataset, rank=None):
+         if is_parallel_state_initialized():
+@@ -249,6 +277,11 @@ def get_qwen2vl_dataset(basic_param, preprocess_param, dataset_param, **kwargs):
+         train_dataset = align_dataset(train_dataset, dataset_attr, data_args)
+         if val_dataset:
+             val_dataset = align_dataset(val_dataset, dataset_attr, data_args)
++        train_dataset = _maybe_shuffle_before_packing(
++            train_dataset,
++            data_args,
++            load_from_cache_file=kwargs.get("load_from_cache_file", True),
++        )
+
+         # -----------------convert text to token id ----------------------------------------------------------------------
+         if data_args.stage == "rm":
+diff --git a/mindspeed_mm/fsdp/params/lora_args.py b/mindspeed_mm/fsdp/params/lora_args.py
+index f8db72fbe1c0f40c391a94e3b142f8543a93bfcc..ba22dba184d89f43e0af589e8ee142ef9291dd0f 100644
+--- a/mindspeed_mm/fsdp/params/lora_args.py
++++ b/mindspeed_mm/fsdp/params/lora_args.py
+@@ -40,6 +40,7 @@ class LoraArguments(BaseArguments):
+         init_lora_weights: Weight initialization method.
+         pretrained_lora_path: Path to pretrained LoRA weights (optional).
+         lora_target_modules_support: List of supported module types.
++        save_full_model: Whether to also save the frozen base model in a full checkpoint.
+     """
+     enable: bool = field(
+         default=False,
+@@ -85,6 +86,16 @@ class LoraArguments(BaseArguments):
+             "If None, validation is skipped."
+         },
+     )
++    save_full_model: bool = field(
++        default=False,
++        metadata={
++            "help": (
++                "Also save a full model checkpoint during pure LoRA training. "
++                "By default, only the LoRA adapter is saved to avoid duplicating "
++                "frozen base-model weights."
++            )
++        },
++    )
+
+     def model_post_init(self, __context):
+         """Validate LoRA configuration after initialization."""
+diff --git a/mindspeed_mm/fsdp/params/training_args.py b/mindspeed_mm/fsdp/params/training_args.py
+index 6ba5c56399fa088b2db02e776c84c54aee83bb15..6059773fe5d14db4dc31da5c298ff25f83247d4e 100644
+--- a/mindspeed_mm/fsdp/params/training_args.py
++++ b/mindspeed_mm/fsdp/params/training_args.py
+@@ -226,7 +226,7 @@ class TrainingArguments(BaseArguments):
+     )
+     train_epochs: Optional[int] = field(
+         default=None,
+-        metadata={"help": "Number of training epochs."},
++        metadata={"help": "Number of training epochs. When set, overrides train_iters."},
+     )
+     load: str = field(
+         default=None,
+@@ -261,6 +261,10 @@ class TrainingArguments(BaseArguments):
+         default=None,
+         metadata={"help": "Directory path to save checkpoints to."},
+     )
++    save_dtype: Optional[Literal["fp16", "bf16", "fp32"]] = field(
++        default=None,
++        metadata={"help": "Optional dtype used only when saving model checkpoint weights."},
++    )
+     no_save_optim: bool = field(
+         default=False,
+         metadata={"help": "Do not save current optimizer."},
+@@ -275,7 +279,12 @@ class TrainingArguments(BaseArguments):
+     )
+     save_interval: int = field(
+         default=1,
+-        metadata={"help": "Number of steps between checkpoint saves."},
++        metadata={
++            "help": (
++                "Number of epochs between checkpoint saves when train_epochs is set; "
++                "otherwise, number of optimizer steps."
++            )
++        },
+     )
+     # Validation configuration
+     val_interval: int = field(
+@@ -315,6 +324,15 @@ class TrainingArguments(BaseArguments):
+         self.global_rank = int(os.getenv("RANK"))
+         self.world_size = int(os.getenv("WORLD_SIZE"))
+
++        if self.train_epochs is not None and self.train_epochs <= 0:
++            raise ValueError("train_epochs must be a positive integer when set.")
++
++        if self.save_interval < 0:
++            raise ValueError("save_interval must be >= 0.")
++
++        if "train_epoches" in (self.model_extra or {}):
++            raise ValueError("Unknown field 'train_epoches'; use 'train_epochs' instead.")
++
+         if self.val_interval < 0:
+             raise ValueError("val_interval must be >= 0.")
+
+diff --git a/mindspeed_mm/fsdp/tasks/funasr/train_engine.py b/mindspeed_mm/fsdp/tasks/funasr/train_engine.py
+index 386e61f717a14068de50288d81ccde8a6779c9d8..b504bc35f4a00df4c62c78b0559ff50f91649e10 100644
+--- a/mindspeed_mm/fsdp/tasks/funasr/train_engine.py
++++ b/mindspeed_mm/fsdp/tasks/funasr/train_engine.py
+@@ -186,7 +186,12 @@ class FunasrTrainEngine(TrainEngine):
+         if not args.training.no_save_optim:
+             state["optimizer"] = self.optimizer
+
+-        self.checkpointer.save(args.training.save, state=state, iteration=iteration)
++        self.checkpointer.save(
++            args.training.save,
++            state=state,
++            iteration=iteration,
++            save_dtype=args.training.save_dtype,
++        )
+         torch.distributed.barrier()
+
+     def load(self):
+diff --git a/mindspeed_mm/fsdp/tasks/funasr/trainer.py b/mindspeed_mm/fsdp/tasks/funasr/trainer.py
+index 79b19e54b67532362090e60632a615703471efcc..5cd9f9dfdfffd68d75d4585f364cfb3435486c88 100644
+--- a/mindspeed_mm/fsdp/tasks/funasr/trainer.py
++++ b/mindspeed_mm/fsdp/tasks/funasr/trainer.py
+@@ -6,7 +6,7 @@ from mindspeed_mm.fsdp.data.datasets.funasr.funasr_dataset import (
+ )
+ from mindspeed_mm.fsdp.distributed.torch_parallelize import ParallelApplier
+ from mindspeed_mm.fsdp.models.funasr.modeling_funasr import get_funasr_model
+-from mindspeed_mm.fsdp.params.argument import Arguments, parse_args
++from mindspeed_mm.fsdp.params.argument import Arguments
+ from mindspeed_mm.fsdp.tools.memory_profiler import memory_profiler
+ from mindspeed_mm.fsdp.tools.profiler import Profiler
+ from mindspeed_mm.fsdp.train.trainer import Trainer
+@@ -49,6 +49,12 @@ class FunasrTrainer(Trainer):
+         # Get model FIRST to extract tokenizer/frontend
+         self.model, self.tokenizer, self.frontend = get_funasr_model(self.args.model, self.model_parallel_applier)
+
++        if self.args.training.train_epochs is not None:
++            raise ValueError(
++                "training.train_epochs is not supported by FunASR's split-based dataloader; "
++                "use training.max_epochs together with training.train_iters instead."
++            )
++
+         # Validate and calculate training iterations
+         self._validate_and_set_train_iters(self.args)
+
+diff --git a/mindspeed_mm/fsdp/train/epoch_schedule.py b/mindspeed_mm/fsdp/train/epoch_schedule.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bda63e21958400e17a49a6c320cd098df1dd1c1
+--- /dev/null
++++ b/mindspeed_mm/fsdp/train/epoch_schedule.py
+@@ -0,0 +1,82 @@
++"""Pure helpers for resolving epoch-based training schedules."""
++
++from collections.abc import Collection
++from typing import Optional
++
++
++def get_epoch_micro_batches(dataloader) -> tuple[int, Optional[int]]:
++    """Return local micro-batches and, when known, active global samples.
++
++    A standard PyTorch DataLoader reports batches from ``__len__``. The
++    project's BaseRandomBatchSampler historically reports global samples
++    instead, so samplers exposing its accounting attributes are normalized.
++    """
++    batch_sampler = getattr(dataloader, "batch_sampler", None)
++    sampler_attributes = (
++        "total_samples",
++        "last_batch_size",
++        "micro_batch_times_data_parallel_size",
++    )
++    if batch_sampler is not None and all(
++        hasattr(batch_sampler, name) for name in sampler_attributes
++    ):
++        active_train_samples = batch_sampler.total_samples - batch_sampler.last_batch_size
++        global_micro_batch_size = batch_sampler.micro_batch_times_data_parallel_size
++        if global_micro_batch_size <= 0:
++            raise ValueError("The sampler's global micro-batch size must be positive.")
++        return active_train_samples // global_micro_batch_size, active_train_samples
++
++    return len(dataloader), None
++
++
++def resolve_epoch_schedule(
++    micro_batches_per_epoch: int,
++    gradient_accumulation_steps: int,
++    train_epochs: int,
++    save_interval_epochs: int,
++) -> tuple[int, list[int]]:
++    """Convert epoch settings to total iterations and exact save iterations.
++
++    Each epoch boundary is rounded up to the first optimizer iteration that
++    crosses it. This avoids checkpoint drift for non-divisible dataset sizes.
++    """
++    if train_epochs <= 0:
++        raise ValueError("train_epochs must be a positive integer.")
++    if save_interval_epochs < 0:
++        raise ValueError("save_interval must be >= 0.")
++    if micro_batches_per_epoch <= 0:
++        raise ValueError("micro_batches_per_epoch must be a positive integer.")
++    if gradient_accumulation_steps <= 0:
++        raise ValueError("gradient_accumulation_steps must be a positive integer.")
++    if micro_batches_per_epoch < gradient_accumulation_steps:
++        raise ValueError(
++            f"Cannot train by epochs because the dataloader has {micro_batches_per_epoch} "
++            f"micro-batches per epoch, which is smaller than gradient_accumulation_steps "
++            f"({gradient_accumulation_steps}). Reduce gradient accumulation or specify "
++            f"train_iters directly."
++        )
++
++    def _iteration_at_epoch(epoch: int) -> int:
++        micro_batches = epoch * micro_batches_per_epoch
++        return (micro_batches + gradient_accumulation_steps - 1) // gradient_accumulation_steps
++
++    train_iters = _iteration_at_epoch(train_epochs)
++    if save_interval_epochs == 0:
++        return train_iters, []
++
++    save_iterations = [
++        _iteration_at_epoch(epoch)
++        for epoch in range(save_interval_epochs, train_epochs + 1, save_interval_epochs)
++    ]
++    return train_iters, save_iterations
++
++
++def checkpoint_is_due(
++    iteration: int,
++    save_interval: int,
++    save_iterations: Optional[Collection[int]] = None,
++) -> bool:
++    """Return whether an optimizer iteration is a configured save point."""
++    if save_iterations is not None:
++        return iteration in save_iterations
++    return save_interval > 0 and iteration % save_interval == 0
+diff --git a/mindspeed_mm/fsdp/train/train_engine.py b/mindspeed_mm/fsdp/train/train_engine.py
+index 7bc9d9971b240a776e5b6531f518e8f8ddfd89b1..494f63ee48c981d6c761f3380e7d6c4ac464565e 100644
+--- a/mindspeed_mm/fsdp/train/train_engine.py
++++ b/mindspeed_mm/fsdp/train/train_engine.py
+@@ -17,11 +17,12 @@ from mindspeed_mm.fsdp.tools.profiler import Profiler
+ from mindspeed_mm.fsdp.tools.memory_profiler import memory_profiler
+ from mindspeed_mm.fsdp.loss.loss_func import build_loss_func
+ from mindspeed_mm.fsdp.params.argument import Arguments
+-from mindspeed_mm.fsdp.utils.lora_utils import load_state_dict
++from mindspeed_mm.fsdp.utils.lora_utils import is_pure_lora_training, load_state_dict
+ from mindspeed_mm.fsdp.data.dataloader.dataloader import Preloader
+ from mindspeed_mm.fsdp.checkpoint.hf_load_utils import load_hf_checkpoint, looks_like_hf_weight_dir
+ from mindspeed_mm.fsdp.utils.constants import MEMORY_REPORT_ITERATION
+ from mindspeed_mm.fsdp.train.training_context import TrainingStage, TrainingContext
++from mindspeed_mm.fsdp.train.epoch_schedule import checkpoint_is_due
+
+ logger = logging.getLogger(__name__)
+
+@@ -39,6 +40,7 @@ class TrainEngine:
+         checkpointer,
+         lora_weight_manager=None,
+         val_dataloader=None,
++        save_iterations=None,
+         **kwargs,
+     ):
+         self.args = args
+@@ -50,6 +52,7 @@ class TrainEngine:
+         self.lr_scheduler = scheduler
+         self.checkpointer = checkpointer
+         self.lora_weight_manager = lora_weight_manager
++        self.save_iterations = set(save_iterations) if save_iterations is not None else None
+
+         # Training state tracking
+         self.iteration, self.consumed_train_samples = 0, 0
+@@ -239,6 +242,7 @@ class TrainEngine:
+
+         # --- Train Loop ---
+         curr_step_lr = self.lr_scheduler.get_last_lr()[0]
++        last_saved_iteration = None
+         while self.iteration < args.training.train_iters:
+             # Record memory usage if enabled
+             memory_profiler.step()
+@@ -287,12 +291,9 @@ class TrainEngine:
+             curr_step_lr = self.lr_scheduler.get_last_lr()[0]
+
+             # Save checkpoint at specified intervals
+-            if (
+-                args.training.save
+-                and args.training.save_interval > 0
+-                and self.iteration % args.training.save_interval == 0
+-            ):
++            if args.training.save and self._checkpoint_is_due():
+                 self.save(self.iteration, self.consumed_train_samples)
++                last_saved_iteration = self.iteration
+             # Validation at specified intervals
+             if (
+                 args.training.val_interval > 0
+@@ -305,9 +306,17 @@ class TrainEngine:
+         self.profiler.stop()
+         memory_profiler.stop()
+         # Final save after training completes
+-        if args.training.save:
++        if args.training.save and last_saved_iteration != self.iteration:
+             self.save(self.iteration, self.consumed_train_samples)
+
++    def _checkpoint_is_due(self):
++        """Return whether the current optimizer iteration is a save point."""
++        return checkpoint_is_due(
++            iteration=self.iteration,
++            save_interval=self.args.training.save_interval,
++            save_iterations=self.save_iterations,
++        )
++
+     def _run_validation(self, iteration):
+         print_rank(logger.info, f"Running validation at iteration {iteration}...")
+
+@@ -393,12 +402,28 @@ class TrainEngine:
+
+         # Handle LoRA save modes
+         if args.training.lora.enable:
+-            # Save only LoRA adapter weights
++            lora_adapter_saved = False
+             if self.lora_weight_manager is not None:
+                 self.lora_weight_manager.save_lora_only(
+                     save_path=args.training.save,
+                     iteration=iteration,
+                 )
++                lora_adapter_saved = True
++
++            save_full_model = getattr(args.training.lora, "save_full_model", False)
++            if (
++                lora_adapter_saved
++                and is_pure_lora_training(self.model)
++                and not save_full_model
++            ):
++                print_rank(
++                    logger.info,
++                    "Pure LoRA training detected: saved adapter-only checkpoint "
++                    "and skipped frozen base-model weights. Set "
++                    "training.lora.save_full_model=true to also save a full checkpoint.",
++                )
++                torch.distributed.barrier()
++                return
+
+         # Default save behavior (full model)
+         state = {
+@@ -414,7 +439,12 @@ class TrainEngine:
+             state["optimizer"] = self.optimizer
+         if not args.training.no_save_rng:
+             state["extra_state"]["torch_rng_state"] = torch.get_rng_state()
+-        self.checkpointer.save(args.training.save, state=state, iteration=iteration)
++        self.checkpointer.save(
++            args.training.save,
++            state=state,
++            iteration=iteration,
++            save_dtype=args.training.save_dtype,
++        )
+
+         # Synchronize all processes after saving
+         torch.distributed.barrier()
+diff --git a/mindspeed_mm/fsdp/train/trainer.py b/mindspeed_mm/fsdp/train/trainer.py
+index d550c585a76e87f8d4a02e582413656b0f68c87c..e134b379c240ce455fd3c7f53e5714daaa06a307 100644
+--- a/mindspeed_mm/fsdp/train/trainer.py
++++ b/mindspeed_mm/fsdp/train/trainer.py
+@@ -31,12 +31,14 @@ from mindspeed_mm.fsdp.utils.register import import_plugin
+ from mindspeed_mm.fsdp.params.argument import Arguments
+ from mindspeed_mm.fsdp.tools.memory_profiler import memory_profiler
+ from mindspeed_mm.fsdp.train.train_engine import TrainEngine
++from mindspeed_mm.fsdp.train.epoch_schedule import get_epoch_micro_batches, resolve_epoch_schedule
+ from mindspeed_mm.fsdp.utils.lora_utils import (
+     add_lora_to_model,
+     freeze_parameters,
+     match_target_modules,
+     validate_lora_config,
+     get_lora_trainable_params,
++    initialize_lora_weights_after_materialization,
+     print_lora_config,
+ )
+ from mindspeed_mm.fsdp.utils.lora_weight_manager import LoraWeightManager
+@@ -78,7 +80,7 @@ class Trainer:
+         self.checkpointer = self.get_checkpointer()
+
+         # Validate and calculate training iterations
+-        self._validate_and_set_train_iters(args)
++        save_iterations = self._validate_and_set_train_iters(args)
+
+         # if set `train_epochs`,  `train_iters` will be updated after building dataset
+         self.lr_scheduler = self.get_scheduler()
+@@ -97,41 +99,83 @@ class Trainer:
+             self.checkpointer,
+             val_dataloader=self.val_dataloader,
+             lora_weight_manager=self.lora_weight_manager,
++            save_iterations=save_iterations,
+         )
+
+     def _validate_and_set_train_iters(self, args: Arguments):
+-        # Calculate total training iterations based on epochs if specified
++        """Resolve epoch-based training settings to optimizer iterations.
+
+-        if args.training.train_epochs is not None:
+-            if not hasattr(self.train_dataloader, "__len__"):
+-                raise ValueError(
+-                    f"Cannot calculate train_iters from epochs because the dataloader "
+-                    f"(type: {type(self.train_dataloader).__name__}) does not have __len__ attribute. "
+-                    f"This typically happens when using IterableDataset or streaming data. "
+-                    f"Please either:\n"
+-                    f"1. Specify train_iters directly instead of epochs, or\n"
+-                    f"2. Use a dataloader with a determinable length (regular Dataset), or\n"
+-                    f"3. Provide a custom dataloader_provider that returns a dataloader with __len__"
+-                )
+-            elif len(self.train_dataloader) == 0:
+-                raise ValueError(
+-                    f"Cannot calculate train_iters from epochs because the dataloader "
+-                    f"(type: {type(self.train_dataloader).__name__}) has zero length. "
+-                    f"This indicates an empty dataset or invalid dataloader configuration. "
+-                    f"Please check your dataset or dataloader setup."
+-                )
+-            else:
+-                drop_last = getattr(getattr(args.data, "dataloader_param", {}), "drop_last", True)
+-                iters_per_epoch = len(self.train_dataloader) // args.training.global_batch_size
+-                if drop_last:
+-                    args.training.train_iters = args.training.train_epochs * iters_per_epoch
+-                else:
+-                    total_micro_batch_num = len(self.train_dataloader) // args.training.micro_batch_size
+-                    total_samples = total_micro_batch_num * args.training.micro_batch_size
+-                    args.training.train_iters = total_samples * args.training.train_epochs // args.training.global_batch_size
+-                print_rank(logger.info, f"Total samples in training dataset: {len(self.train_dataloader)}")
+-                print_rank(logger.info, f"Training iterations per epoch: {iters_per_epoch}")
+-                print_rank(logger.info, f"Total training iterations: {args.training.train_iters}")
++        ``TrainEngine`` remains iteration based. When ``train_epochs`` is set,
++        ``save_interval`` is interpreted as epochs as well. Epoch boundaries
++        are rounded up to the first optimizer iteration that crosses them, so
++        checkpoint timing does not drift when the dataset size is not evenly
++        divisible by the global batch size.
++
++        Returns:
++            A list of optimizer iterations at which checkpoints should be
++            saved in epoch mode, or ``None`` in iteration mode.
++        """
++        train_epochs = args.training.train_epochs
++        if train_epochs is None:
++            return None
++
++        base_dataloader = (
++            self.train_dataloader.base_dataloader
++            if isinstance(self.train_dataloader, PrefetchGradAccDataLoader)
++            else self.train_dataloader
++        )
++        if not hasattr(base_dataloader, "__len__"):
++            raise ValueError(
++                f"Cannot calculate train_iters from epochs because the dataloader "
++                f"(type: {type(base_dataloader).__name__}) does not have __len__ attribute. "
++                f"This typically happens when using IterableDataset or streaming data. "
++                f"Please either:\n"
++                f"1. Specify train_iters directly instead of epochs, or\n"
++                f"2. Use a dataloader with a determinable length (regular Dataset), or\n"
++                f"3. Provide a custom dataloader_provider that returns a dataloader with __len__"
++            )
++
++        try:
++            micro_batches_per_epoch, active_train_samples = get_epoch_micro_batches(base_dataloader)
++        except TypeError as exc:
++            raise ValueError(
++                f"Cannot calculate train_iters from epochs because the dataloader "
++                f"(type: {type(base_dataloader).__name__}) does not have a determinable length. "
++                f"Specify train_iters directly for IterableDataset or streaming data."
++            ) from exc
++        if micro_batches_per_epoch == 0:
++            raise ValueError(
++                f"Cannot calculate train_iters from epochs because the dataloader "
++                f"(type: {type(base_dataloader).__name__}) has zero length. "
++                f"This indicates an empty dataset or invalid dataloader configuration. "
++                f"Please check your dataset or dataloader setup."
++            )
++
++        save_interval_epochs = args.training.save_interval
++        args.training.train_iters, save_iterations = resolve_epoch_schedule(
++            micro_batches_per_epoch=micro_batches_per_epoch,
++            gradient_accumulation_steps=args.training.gradient_accumulation_steps,
++            train_epochs=train_epochs,
++            save_interval_epochs=save_interval_epochs,
++        )
++
++        if active_train_samples is not None:
++            print_rank(logger.info, f"Effective samples in each training dataset epoch: {active_train_samples}")
++        print_rank(logger.info, f"Training micro-batches per epoch: {micro_batches_per_epoch}")
++        print_rank(
++            logger.info,
++            f"Training iterations per epoch: "
++            f"{micro_batches_per_epoch / args.training.gradient_accumulation_steps:.6g} "
++            f"(epoch boundaries are rounded up)",
++        )
++        print_rank(logger.info, f"Total training iterations: {args.training.train_iters}")
++        if save_interval_epochs > 0:
++            print_rank(
++                logger.info,
++                f"Checkpoint interval: every {save_interval_epochs} epoch(s); "
++                f"resolved save iterations: {save_iterations}",
++            )
++        return save_iterations
+
+     def initialize(self):
+         """Initialize training environment: logging, random seeds, distributed groups."""
+@@ -201,11 +245,19 @@ class Trainer:
+                 raise ValueError(
+                     "Must set `training.load` when `training.load_rank0_and_broadcast` is True, otherwise the model will be initialized with meta device but no weights will be loaded."
+                 )
+-            elif args.training.load is None and not args.training.load_rank0_and_broadcast or args.training.lora.enable:
+-                to_empty_if_needed(model, device=device)
++            to_empty_if_needed(model, device=device)
++
++            # Preserve the existing fallback initialization for LoRA runs so a
++            # partial base checkpoint cannot leave materialized storage
++            # uninitialized. Adapters are then reset with PEFT semantics because
++            # their original initialization ran on meta tensors.
++            if args.training.load is None or args.training.lora.enable:
+                 init_model_weights(model)
+-            else:  # load is not None
+-                to_empty_if_needed(model, device=device)
++            if args.training.lora.enable:
++                initialize_lora_weights_after_materialization(
++                    model,
++                    args.training.lora.init_lora_weights,
++                )
+
+         if args.training.lora.enable:
+             self.lora_weight_manager = LoraWeightManager(model)
+diff --git a/mindspeed_mm/fsdp/utils/lora_utils.py b/mindspeed_mm/fsdp/utils/lora_utils.py
+index 5ef854568daa4718ec3e27c831b1a1402d9cc979..b2805d0e392625cf692b690f94de2f81fc50afe1 100644
+--- a/mindspeed_mm/fsdp/utils/lora_utils.py
++++ b/mindspeed_mm/fsdp/utils/lora_utils.py
+@@ -34,6 +34,22 @@ import torch.nn as nn
+ logger = logging.getLogger(__name__)
+
+
++def is_pure_lora_training(model: nn.Module) -> bool:
++    """Return whether every trainable parameter belongs to a LoRA adapter.
++
++    A non-empty trainable parameter set is required. This makes adapter-only
++    checkpointing safe for the usual LoRA case while ensuring that mixed
++    training (for example, an unfrozen ``lm_head``) still uses a full model
++    checkpoint so that no trainable weights are lost.
++    """
++    trainable_param_names = [
++        name for name, param in model.named_parameters() if param.requires_grad
++    ]
++    return bool(trainable_param_names) and all(
++        "lora_" in name for name in trainable_param_names
++    )
++
++
+ def freeze_parameters(model: nn.Module) -> None:
+     """Freeze all parameters in the model.
+
+@@ -181,6 +197,86 @@ def get_lora_trainable_params(model: nn.Module) -> Tuple[int, int, Dict[str, Any
+     return trainable_params, total_params, stats_dict
+
+
++@torch.no_grad()
++def initialize_lora_weights_after_materialization(
++    model: nn.Module,
++    init_lora_weights: bool | str,
++) -> int:
++    """Initialize LoRA weights after a meta-initialized model is materialized.
++
++    PEFT initializes adapters when they are injected. If the base model lives on
++    the meta device at that point, those writes do not initialize real storage.
++    ``Module.to_empty`` later allocates that storage without preserving values,
++    so adapters must be initialized again after materialization.
++
++    Args:
++        model: Materialized model containing PEFT LoRA layers.
++        init_lora_weights: The PEFT LoRA initialization method.
++
++    Returns:
++        Number of LoRA adapters initialized.
++
++    Raises:
++        ImportError: If PEFT is not installed.
++        ValueError: If the requested initialization needs materialized base
++            weights and therefore cannot run before the base checkpoint load.
++        RuntimeError: If no LoRA adapters are found.
++    """
++    try:
++        from peft.tuners.lora.layer import LoraLayer
++    except ImportError as e:
++        raise ImportError(
++            "PEFT library is required for LoRA training. "
++            "Please install it with: pip install peft"
++        ) from e
++
++    if isinstance(init_lora_weights, str):
++        init_method = init_lora_weights.lower()
++        if init_method != "gaussian":
++            raise ValueError(
++                "Meta-device LoRA initialization currently supports "
++                "init_lora_weights=True, False, or 'gaussian'. "
++                f"Method '{init_lora_weights}' requires materialized base weights."
++            )
++
++    initialized_adapters = 0
++    for module in model.modules():
++        if not isinstance(module, LoraLayer):
++            continue
++
++        linear_adapters = set(getattr(module, "lora_A", {}).keys())
++        embedding_adapters = set(getattr(module, "lora_embedding_A", {}).keys())
++        adapter_names = linear_adapters | embedding_adapters
++
++        for adapter_name in adapter_names:
++            if init_lora_weights is False:
++                # PEFT leaves the default torch initialization in place when
++                # init_lora_weights=False. Recreate it because to_empty() does
++                # not preserve the initialization performed on meta tensors.
++                if adapter_name in linear_adapters:
++                    module.lora_A[adapter_name].reset_parameters()
++                    module.lora_B[adapter_name].reset_parameters()
++                if adapter_name in embedding_adapters:
++                    nn.init.normal_(module.lora_embedding_A[adapter_name])
++                    nn.init.normal_(module.lora_embedding_B[adapter_name])
++            else:
++                # PEFT semantics: True initializes A with Kaiming uniform and
++                # B with zeros; "gaussian" initializes A normally and B with
++                # zeros. DTensor dispatch applies these operations per shard.
++                module.reset_lora_parameters(adapter_name, init_lora_weights)
++
++            initialized_adapters += 1
++
++    if initialized_adapters == 0:
++        raise RuntimeError("No LoRA adapters found after model materialization")
++
++    logger.info(
++        "Initialized %d LoRA adapter(s) after meta-device materialization",
++        initialized_adapters,
++    )
++    return initialized_adapters
++
++
+ def add_lora_to_model(
+     model: nn.Module,
+     lora_rank: int = 8,
+diff --git a/run_qwen36_sft.sh b/run_qwen36_sft.sh
+new file mode 100644
+index 00000000..13030381
+--- /dev/null
++++ b/run_qwen36_sft.sh
+@@ -0,0 +1,11 @@
++#!/usr/bin/env bash
++
++# 根据实际情况修改 ascend-toolkit 路径
++# source /usr/local/Ascend/cann/set_env.sh
++
++# 16 rank sft
++# bash run_train_nohup.sh path/to/config.yaml
++
++# 8 rank sft
++# export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
++# EXPECTED_NPU_COUNT=8 bash run_train_nohup.sh path/to/config.yaml 8
+diff --git a/run_train_nohup.sh b/run_train_nohup.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..319dd2563342af035d028552d56fffd7a20add08
+--- /dev/null
++++ b/run_train_nohup.sh
+@@ -0,0 +1,137 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++cd "${script_dir}"
++
++if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
++  echo "Usage: bash $0 <config> [npu_count]" >&2
++  exit 2
++fi
++
++config="$1"
++training_npu_count="${2:-${NPUS_PER_NODE:-16}}"
++if [[ ! "${training_npu_count}" =~ ^[1-9][0-9]*$ ]]; then
++  echo "npu_count must be a positive integer, got: ${training_npu_count}" >&2
++  exit 2
++fi
++
++visible_npu_devices="${ASCEND_RT_VISIBLE_DEVICES:-}"
++if [ -n "${visible_npu_devices}" ]; then
++  npu_device_ids="${visible_npu_devices//[[:space:]]/}"
++else
++  npu_device_ids=""
++  for ((device_id = 0; device_id < training_npu_count; device_id++)); do
++    if [ -n "${npu_device_ids}" ]; then
++      npu_device_ids+=","
++    fi
++    npu_device_ids+="${device_id}"
++  done
++fi
++
++if [[ ! "${npu_device_ids}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
++  echo "Invalid NPU device list: ${npu_device_ids}" >&2
++  exit 2
++fi
++IFS=',' read -r -a selected_npu_devices <<< "${npu_device_ids}"
++if [ "${#selected_npu_devices[@]}" -ne "${training_npu_count}" ]; then
++  echo "ASCEND_RT_VISIBLE_DEVICES selects ${#selected_npu_devices[@]} device(s), " \
++    "but npu_count is ${training_npu_count}: ${npu_device_ids}" >&2
++  exit 2
++fi
++declare -A seen_npu_devices=()
++for device_id in "${selected_npu_devices[@]}"; do
++  if [ -n "${seen_npu_devices[${device_id}]:-}" ]; then
++    echo "Duplicate NPU device ID: ${device_id}" >&2
++    exit 2
++  fi
++  seen_npu_devices[${device_id}]=1
++done
++
++wait_script="scripts/wait_for_npu_idle.sh"
++train_script="examples/qwen3_6/finetune_qwen3_6_27B.sh"
++convert_script="cvt_ckpt_dcp2hf_batch.sh"
++
++if [ ! -f "${config}" ]; then
++  echo "Config file does not exist: ${config}" >&2
++  exit 1
++fi
++
++if [ ! -f "${wait_script}" ]; then
++  echo "NPU wait script does not exist: ${wait_script}" >&2
++  exit 1
++fi
++
++if [ ! -f "${train_script}" ]; then
++  echo "Training script does not exist: ${train_script}" >&2
++  exit 1
++fi
++
++if [ ! -f "${convert_script}" ]; then
++  echo "Checkpoint conversion script does not exist: ${convert_script}" >&2
++  exit 1
++fi
++
++dcp_dir="$(
++  python -c '
++import sys
++import yaml
++
++with open(sys.argv[1], encoding="utf-8") as config_file:
++    config = yaml.safe_load(config_file) or {}
++
++save = config.get("training", {}).get("save")
++if not isinstance(save, str) or not save.strip():
++    raise SystemExit(f"training.save is missing or empty in config: {sys.argv[1]}")
++
++print(save)
++' "${config}"
++)"
++save_hf_dir="${dcp_dir%/}-hf"
++expected_npu_count="${EXPECTED_NPU_COUNT:-16}"
++
++mkdir -p logs
++
++config_name="$(basename "${config}")"
++config_name="${config_name%.*}"
++tag="${config_name}_$(date +%Y%m%d_%H%M%S)"
++pidfile="logs/${tag}.pid"
++workflow_log="logs/${tag}_workflow.log"
++
++nohup bash -c '
++  set -euo pipefail
++
++  wait_script="$1"
++  train_script="$2"
++  config="$3"
++  convert_script="$4"
++  dcp_dir="$5"
++  save_hf_dir="$6"
++  expected_npu_count="$7"
++  training_npu_count="$8"
++  npu_device_ids="$9"
++
++  echo "Waiting for physical NPU device(s) ${npu_device_ids} to become idle."
++  NPU_DEVICE_IDS="${npu_device_ids}" EXPECTED_NPU_COUNT="${expected_npu_count}" \
++    NPUS_PER_NODE="${training_npu_count}" \
++    bash "${wait_script}" "${train_script}" "${config}"
++
++  echo "Training completed. Starting checkpoint post-processing."
++  bash "${convert_script}" "${dcp_dir}" "${save_hf_dir}" "${config}"
++' _ "${wait_script}" "${train_script}" "${config}" "${convert_script}" \
++  "${dcp_dir}" "${save_hf_dir}" "${expected_npu_count}" "${training_npu_count}" \
++  "${npu_device_ids}" \
++  </dev/null >"${workflow_log}" 2>&1 &
++
++pid=$!
++printf '%s\n' "$pid" > "$pidfile"
++disown "$pid"
++
++echo "PID: $pid"
++echo "PID file: $pidfile"
++echo "Workflow log: $workflow_log"
++echo "Training config: $config"
++echo "Training NPU count: $training_npu_count"
++echo "Physical NPU device IDs: $npu_device_ids"
++echo "Checkpoint output dir: $dcp_dir"
++echo "DCP-to-HF output prefix: $save_hf_dir"
+diff --git a/scripts/wait_for_npu_idle.sh b/scripts/wait_for_npu_idle.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea2d0f081526b93d4b2991431d4affc9dcbbfe71
+--- /dev/null
++++ b/scripts/wait_for_npu_idle.sh
+@@ -0,0 +1,190 @@
++#!/usr/bin/env bash
++set -uo pipefail
++
++# Wait until every visible NPU only has its baseline memory allocation, then
++# replace this watcher with the requested shell script.
++#
++# Optional environment variables:
++#   IDLE_MEMORY_THRESHOLD_MB  Maximum idle memory per NPU (default: 4000)
++#   CHECK_INTERVAL_SECONDS    Delay between checks (default: 300)
++#   QUERY_TIMEOUT_SECONDS     Timeout for each npu-smi query (default: 30)
++#   EXPECTED_NPU_COUNT        Expected physical NPU count. A filtered result
++#                             matching NPU_DEVICE_IDS count is also accepted.
++#   NPU_DEVICE_IDS            Comma-separated physical NPU IDs to check. When
++#                             unset, check every NPU reported by npu-smi.
++
++idle_memory_threshold_mb="${IDLE_MEMORY_THRESHOLD_MB:-4000}"
++check_interval_seconds="${CHECK_INTERVAL_SECONDS:-300}"
++query_timeout_seconds="${QUERY_TIMEOUT_SECONDS:-30}"
++expected_npu_count="${EXPECTED_NPU_COUNT:-}"
++npu_device_ids="${NPU_DEVICE_IDS:-}"
++minimum_device_memory_mb=4096
++
++usage() {
++    echo "Usage: bash $0 <target.sh> [target arguments ...]"
++}
++
++log() {
++    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
++}
++
++is_non_negative_integer() {
++    [[ "$1" =~ ^[0-9]+$ ]]
++}
++
++parse_memory_usage() {
++    awk -v minimum_capacity="${minimum_device_memory_mb}" '
++        {
++            gsub(/\|/, " ")
++            for (field = 1; field <= NF; field++) {
++                used = ""
++                total = ""
++
++                if ($field ~ /^[0-9]+\/[0-9]+$/) {
++                    split($field, memory, "/")
++                    used = memory[1]
++                    total = memory[2]
++                } else if ($field ~ /^[0-9]+$/ && $(field + 1) == "/" && $(field + 2) ~ /^[0-9]+$/) {
++                    used = $field
++                    total = $(field + 2)
++                    field += 2
++                }
++
++                # This excludes unrelated ratios such as Hugepages-Usage (0/0).
++                if (total != "" && total + 0 >= minimum_capacity) {
++                    print used + 0
++                }
++            }
++        }
++    '
++}
++
++query_npu_smi() {
++    # ASCEND_RT_VISIBLE_DEVICES also filters npu-smi output on some systems.
++    # Try to query the full physical-device view. Some container runtimes still
++    # expose only the assigned devices; that filtered view is handled below.
++    # The target training process keeps the original visibility setting because
++    # the unset only happens in a subshell.
++    (
++        unset ASCEND_RT_VISIBLE_DEVICES
++        timeout "${query_timeout_seconds}" npu-smi info
++    )
++}
++
++if [ "$#" -lt 1 ]; then
++    usage
++    exit 2
++fi
++
++target_script="$1"
++shift
++
++if [ ! -f "${target_script}" ]; then
++    echo "Target script does not exist: ${target_script}" >&2
++    exit 2
++fi
++
++for value_name in idle_memory_threshold_mb check_interval_seconds query_timeout_seconds; do
++    value="${!value_name}"
++    if ! is_non_negative_integer "${value}"; then
++        echo "${value_name} must be a non-negative integer, got: ${value}" >&2
++        exit 2
++    fi
++done
++
++if [ -n "${expected_npu_count}" ] && ! is_non_negative_integer "${expected_npu_count}"; then
++    echo "EXPECTED_NPU_COUNT must be a non-negative integer, got: ${expected_npu_count}" >&2
++    exit 2
++fi
++
++selected_device_ids=()
++if [ -n "${npu_device_ids}" ]; then
++    if [[ ! "${npu_device_ids}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
++        echo "NPU_DEVICE_IDS must be comma-separated non-negative integers, got: ${npu_device_ids}" >&2
++        exit 2
++    fi
++    IFS=',' read -r -a selected_device_ids <<< "${npu_device_ids}"
++    declare -A seen_device_ids=()
++    for device_id in "${selected_device_ids[@]}"; do
++        if [ -n "${seen_device_ids[${device_id}]:-}" ]; then
++            echo "NPU_DEVICE_IDS contains duplicate device ID: ${device_id}" >&2
++            exit 2
++        fi
++        seen_device_ids[${device_id}]=1
++    done
++fi
++
++if ! command -v npu-smi >/dev/null 2>&1; then
++    echo "npu-smi was not found in PATH" >&2
++    exit 127
++fi
++
++while true; do
++    if ! npu_smi_output="$(query_npu_smi 2>&1)"; then
++        log "npu-smi query failed or timed out; retrying in ${check_interval_seconds}s."
++        sleep "${check_interval_seconds}"
++        continue
++    fi
++
++    mapfile -t memory_usages < <(printf '%s\n' "${npu_smi_output}" | parse_memory_usage)
++
++    if [ "${#memory_usages[@]}" -eq 0 ]; then
++        log "No NPU memory data could be parsed; retrying in ${check_interval_seconds}s."
++        sleep "${check_interval_seconds}"
++        continue
++    fi
++
++    if [ "${#selected_device_ids[@]}" -eq 0 ]; then
++        selected_device_ids=("${!memory_usages[@]}")
++    fi
++
++    reported_device_count="${#memory_usages[@]}"
++    selected_device_count="${#selected_device_ids[@]}"
++    if [ -n "${expected_npu_count}" ] \
++        && [ "${reported_device_count}" -ne "${expected_npu_count}" ] \
++        && [ "${reported_device_count}" -ne "${selected_device_count}" ]; then
++        log "Found ${reported_device_count} NPU memory entries; expected ${expected_npu_count} physical or ${selected_device_count} selected; retrying in ${check_interval_seconds}s."
++        sleep "${check_interval_seconds}"
++        continue
++    fi
++
++    memory_entry_indexes=()
++    if [ "${reported_device_count}" -eq "${selected_device_count}" ]; then
++        # npu-smi is already filtered to the visible devices. Its entries are
++        # positional, so map them to the physical IDs supplied by the launcher.
++        memory_entry_indexes=("${!memory_usages[@]}")
++        log "npu-smi reported the ${reported_device_count} selected device(s); mapping entries to physical NPU device(s) ${selected_device_ids[*]}."
++    else
++        # npu-smi returned the full physical-device view; physical IDs can be
++        # used directly as indexes.
++        for device_id in "${selected_device_ids[@]}"; do
++            if [ "${device_id}" -ge "${reported_device_count}" ]; then
++                echo "Selected NPU device ID ${device_id} is unavailable; " \
++                    "npu-smi reported ${reported_device_count} device(s)." >&2
++                exit 2
++            fi
++            memory_entry_indexes+=("${device_id}")
++        done
++    fi
++
++    all_idle=true
++    for selected_index in "${!selected_device_ids[@]}"; do
++        device_id="${selected_device_ids[selected_index]}"
++        memory_entry_index="${memory_entry_indexes[selected_index]}"
++        used_mb="${memory_usages[memory_entry_index]}"
++        if [ "${used_mb}" -gt "${idle_memory_threshold_mb}" ]; then
++            log "NPU ${device_id}: ${used_mb} MB used (busy; threshold ${idle_memory_threshold_mb} MB)."
++            all_idle=false
++        else
++            log "NPU ${device_id}: ${used_mb} MB used (idle)."
++        fi
++    done
++
++    if [ "${all_idle}" = true ]; then
++        log "Selected NPU device(s) ${selected_device_ids[*]} are idle; starting: bash ${target_script} $*"
++        exec bash "${target_script}" "$@"
++    fi
++
++    log "At least one selected NPU is busy; retrying in ${check_interval_seconds}s."
++    sleep "${check_interval_seconds}"
++done
+diff --git a/tests/ut/test_cvt_data_format_jsonl2json.py b/tests/ut/test_cvt_data_format_jsonl2json.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..893066c1794dfeef5dbec239865b4ab433e858b8
+--- /dev/null
++++ b/tests/ut/test_cvt_data_format_jsonl2json.py
+@@ -0,0 +1,95 @@
++"""Tests for the repository-level JSONL-to-JSON conversion script."""
++
++import json
++import subprocess
++from pathlib import Path
++
++import pytest
++
++
++SCRIPT_PATH = Path(__file__).resolve().parents[2] / "cvt_data_format_jsonl2json.sh"
++
++
++def _run_converter(tmp_path, records):
++    input_path = tmp_path / "input.jsonl"
++    output_path = tmp_path / "output.json"
++    input_path.write_text(
++        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
++        encoding="utf-8",
++    )
++
++    result = subprocess.run(
++        ["bash", str(SCRIPT_PATH), str(input_path), str(output_path)],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    return result, output_path
++
++
++def _read_output(output_path):
++    return json.loads(output_path.read_text(encoding="utf-8"))
++
++
++def test_prompt_response_format_uses_existing_json_shape(tmp_path):
++    records = [
++        {"prompt": "What is 2 + 2?", "response": "4"},
++        {"prompt": "你好，世界", "response": "你好！"},
++    ]
++
++    result, output_path = _run_converter(tmp_path, records)
++
++    assert result.returncode == 0, result.stderr
++    assert _read_output(output_path) == [
++        {
++            "messages": [
++                {"content": "What is 2 + 2?", "role": "user"},
++                {"content": "4", "role": "assistant"},
++            ],
++            "images": [],
++        },
++        {
++            "messages": [
++                {"content": "你好，世界", "role": "user"},
++                {"content": "你好！", "role": "assistant"},
++            ],
++            "images": [],
++        },
++    ]
++
++
++def test_instruction_input_output_format_remains_unchanged(tmp_path):
++    records = [
++        {
++            "instruction": "Translate the input",
++            "input": "hello",
++            "output": "你好",
++        }
++    ]
++
++    result, output_path = _run_converter(tmp_path, records)
++
++    assert result.returncode == 0, result.stderr
++    assert _read_output(output_path) == [
++        {
++            "messages": [
++                {"content": "Translate the input\nhello", "role": "user"},
++                {"content": "你好", "role": "assistant"},
++            ],
++            "images": [],
++        }
++    ]
++
++
++@pytest.mark.parametrize(
++    ("record", "missing_field"),
++    [
++        ({"prompt": "A prompt without a response"}, "response"),
++        ({"response": "A response without a prompt"}, "prompt"),
++    ],
++)
++def test_prompt_response_format_requires_both_fields(tmp_path, record, missing_field):
++    result, _ = _run_converter(tmp_path, [record])
++
++    assert result.returncode != 0
++    assert missing_field in (result.stdout + result.stderr)
+diff --git a/tests/ut/test_lora_fsdp2_integration.py b/tests/ut/test_lora_fsdp2_integration.py
+index b7f847bdf888d303bd1ed4b5eaaab73b004e85b9..ac5985c17c9829f479595c098d62bd7798d75840 100644
+--- a/tests/ut/test_lora_fsdp2_integration.py
++++ b/tests/ut/test_lora_fsdp2_integration.py
+@@ -34,6 +34,7 @@ from mindspeed_mm.fsdp.params.argument import Arguments, parse_args
+ from mindspeed_mm.fsdp.utils.lora_utils import (
+     add_lora_to_model,
+     freeze_parameters,
++    is_pure_lora_training,
+     load_state_dict,
+     match_target_modules,
+     validate_lora_config,
+@@ -146,6 +147,28 @@ class TestLoraUtils:
+         assert stats["trainable_ratio"] > 0  # Should be 1.0 (100% trainable)
+         assert stats["lora_params"] == 0  # No LoRA params in SimpleModel
+
++    def test_is_pure_lora_training(self) -> None:
++        model = SimpleModel()
++        model.requires_grad_(False)
++        model.lora_A = nn.Linear(10, 4, bias=False)
++        model.lora_B = nn.Linear(4, 10, bias=False)
++
++        assert is_pure_lora_training(model) is True
++
++    def test_is_pure_lora_training_rejects_mixed_trainable_params(self) -> None:
++        model = SimpleModel()
++        model.requires_grad_(False)
++        model.lora_A = nn.Linear(10, 4, bias=False)
++        model.linear1.weight.requires_grad_(True)
++
++        assert is_pure_lora_training(model) is False
++
++    def test_is_pure_lora_training_rejects_empty_trainable_params(self) -> None:
++        model = SimpleModel()
++        model.requires_grad_(False)
++
++        assert is_pure_lora_training(model) is False
++
+
+ class TestLoraWeightManager:
+     """Test LoRA weight manager."""
+diff --git a/tests/ut/test_lora_utils.py b/tests/ut/test_lora_utils.py
+index eb689f4b86e684d5d1d25b0d609328976e66368e..d5dd63fea4c968c545c76030f41aec5ce1c08d5c 100644
+--- a/tests/ut/test_lora_utils.py
++++ b/tests/ut/test_lora_utils.py
+@@ -26,9 +26,11 @@ import torch
+ import torch.nn as nn
+
+ from mindspeed_mm.fsdp.utils.lora_utils import (
++    add_lora_to_model,
+     match_target_modules,
+     validate_lora_config,
+     get_lora_trainable_params,
++    initialize_lora_weights_after_materialization,
+     is_pattern_match,
+ )
+
+@@ -377,6 +379,65 @@ class TestGetLoraTrainableParams:
+         assert stats["trainable_ratio"] > 0
+
+
++class TestInitializeLoraWeightsAfterMaterialization:
++    """Test LoRA initialization after meta storage is materialized."""
++
++    @staticmethod
++    def _lora_model(init_lora_weights=True, *, meta=False):
++        pytest.importorskip("peft", exc_type=ImportError)
++        if meta:
++            with torch.device("meta"):
++                model = SimpleModel()
++        else:
++            model = SimpleModel()
++        model = add_lora_to_model(
++            model=model,
++            lora_rank=4,
++            lora_alpha=8,
++            lora_target_modules=["linear1"],
++            lora_dropout=0.0,
++            init_lora_weights=init_lora_weights,
++        )
++        if meta:
++            model.to_empty(device="cpu")
++        return model
++
++    def test_default_initialization_keeps_lora_delta_zero(self) -> None:
++        model = self._lora_model(init_lora_weights=True, meta=True)
++        with torch.no_grad():
++            for name, param in model.named_parameters():
++                if "lora_" in name:
++                    param.fill_(7.0)
++
++        initialized = initialize_lora_weights_after_materialization(model, True)
++
++        lora_a = [param for name, param in model.named_parameters() if "lora_A" in name]
++        lora_b = [param for name, param in model.named_parameters() if "lora_B" in name]
++        assert initialized == 1
++        assert lora_a and all(torch.count_nonzero(param).item() > 0 for param in lora_a)
++        assert lora_b and all(torch.count_nonzero(param).item() == 0 for param in lora_b)
++
++    def test_false_recreates_torch_linear_defaults(self) -> None:
++        model = self._lora_model(init_lora_weights=False, meta=True)
++        with torch.no_grad():
++            for name, param in model.named_parameters():
++                if "lora_" in name:
++                    param.zero_()
++
++        initialize_lora_weights_after_materialization(model, False)
++
++        lora_a = [param for name, param in model.named_parameters() if "lora_A" in name]
++        lora_b = [param for name, param in model.named_parameters() if "lora_B" in name]
++        assert all(torch.count_nonzero(param).item() > 0 for param in lora_a)
++        assert all(torch.count_nonzero(param).item() > 0 for param in lora_b)
++
++    def test_data_dependent_initialization_is_rejected(self) -> None:
++        model = self._lora_model(init_lora_weights=True)
++
++        with pytest.raises(ValueError, match="requires materialized base weights"):
++            initialize_lora_weights_after_materialization(model, "pissa")
++
++
+ class TestLoraUtilsIntegration:
+     """Integration tests for LoRA utilities."""
+
+diff --git a/tests/ut/test_train_engine_lora_save.py b/tests/ut/test_train_engine_lora_save.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa198f3a71de232d42e55ac5af162d7d1aa795e8
+--- /dev/null
++++ b/tests/ut/test_train_engine_lora_save.py
+@@ -0,0 +1,72 @@
++from types import SimpleNamespace
++from unittest.mock import MagicMock, patch
++
++import torch.nn as nn
++
++from mindspeed_mm.fsdp.train.train_engine import TrainEngine
++
++
++class PureLoraModel(nn.Module):
++    def __init__(self):
++        super().__init__()
++        self.base = nn.Linear(4, 4, bias=False)
++        self.base.requires_grad_(False)
++        self.lora_A = nn.Linear(4, 2, bias=False)
++        self.lora_B = nn.Linear(2, 4, bias=False)
++
++
++def build_engine(*, save_full_model: bool) -> TrainEngine:
++    engine = TrainEngine.__new__(TrainEngine)
++    engine.args = SimpleNamespace(
++        training=SimpleNamespace(
++            lora=SimpleNamespace(
++                enable=True,
++                save_full_model=save_full_model,
++            ),
++            save="/tmp/test-lora-save",
++            save_dtype="bf16",
++            no_save_optim=True,
++            no_save_rng=True,
++        )
++    )
++    engine.model = PureLoraModel()
++    engine.lora_weight_manager = MagicMock()
++    engine.checkpointer = MagicMock()
++    engine.lr_scheduler = MagicMock()
++    engine.train_dataloader = MagicMock()
++    return engine
++
++
++def test_pure_lora_save_skips_full_checkpoint_by_default() -> None:
++    engine = build_engine(save_full_model=False)
++
++    with patch("mindspeed_mm.fsdp.train.train_engine.torch.distributed.barrier") as barrier:
++        engine.save(iteration=12, consumed_train_samples=24)
++
++    engine.lora_weight_manager.save_lora_only.assert_called_once_with(
++        save_path="/tmp/test-lora-save",
++        iteration=12,
++    )
++    engine.checkpointer.save.assert_not_called()
++    barrier.assert_called_once_with()
++
++
++def test_pure_lora_save_can_force_full_checkpoint() -> None:
++    engine = build_engine(save_full_model=True)
++
++    with patch("mindspeed_mm.fsdp.train.train_engine.torch.distributed.barrier"):
++        engine.save(iteration=12, consumed_train_samples=24)
++
++    engine.lora_weight_manager.save_lora_only.assert_called_once()
++    engine.checkpointer.save.assert_called_once()
++
++
++def test_mixed_training_keeps_full_checkpoint() -> None:
++    engine = build_engine(save_full_model=False)
++    engine.model.base.weight.requires_grad_(True)
++
++    with patch("mindspeed_mm.fsdp.train.train_engine.torch.distributed.barrier"):
++        engine.save(iteration=12, consumed_train_samples=24)
++
++    engine.lora_weight_manager.save_lora_only.assert_called_once()
++    engine.checkpointer.save.assert_called_once()
+diff --git a/tests/ut_fsdp/test_epoch_training.py b/tests/ut_fsdp/test_epoch_training.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..dea67719f89352684ee86f08606feeeefb2dc05f
+--- /dev/null
++++ b/tests/ut_fsdp/test_epoch_training.py
+@@ -0,0 +1,179 @@
++"""Tests for epoch-based FSDP2 training and checkpoint scheduling."""
++
++import importlib.util
++from pathlib import Path
++import sys
++import types
++
++import pytest
++
++
++MODULE_PATH = (
++    Path(__file__).resolve().parents[2]
++    / "mindspeed_mm"
++    / "fsdp"
++    / "train"
++    / "epoch_schedule.py"
++)
++SPEC = importlib.util.spec_from_file_location("epoch_schedule", MODULE_PATH)
++epoch_schedule = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(epoch_schedule)
++
++
++def _load_module(monkeypatch, module_name, module_path):
++    spec = importlib.util.spec_from_file_location(module_name, module_path)
++    module = importlib.util.module_from_spec(spec)
++    monkeypatch.setitem(sys.modules, module_name, module)
++    spec.loader.exec_module(module)
++    return module
++
++
++def test_train_epoches_typo_points_to_train_epochs(monkeypatch):
++    """Validate the typo without importing the full Torch/NPU training stack."""
++    for package_name in (
++        "mindspeed_mm",
++        "mindspeed_mm.config",
++        "mindspeed_mm.config.arguments",
++        "mindspeed_mm.fsdp",
++        "mindspeed_mm.fsdp.params",
++    ):
++        package = types.ModuleType(package_name)
++        package.__path__ = []
++        monkeypatch.setitem(sys.modules, package_name, package)
++
++    repo_root = Path(__file__).resolve().parents[2]
++    _load_module(
++        monkeypatch,
++        "mindspeed_mm.config.arguments.base_args",
++        repo_root / "mindspeed_mm/config/arguments/base_args.py",
++    )
++    _load_module(
++        monkeypatch,
++        "mindspeed_mm.fsdp.params.lora_args",
++        repo_root / "mindspeed_mm/fsdp/params/lora_args.py",
++    )
++    training_args = _load_module(
++        monkeypatch,
++        "mindspeed_mm.fsdp.params.training_args",
++        repo_root / "mindspeed_mm/fsdp/params/training_args.py",
++    )
++    monkeypatch.setenv("LOCAL_RANK", "0")
++    monkeypatch.setenv("RANK", "0")
++    monkeypatch.setenv("WORLD_SIZE", "1")
++
++    with pytest.raises(ValueError, match=r"train_epoches.*train_epochs"):
++        training_args.TrainingArguments(train_epoches=3)
++
++
++class _StandardDataLoader:
++    batch_sampler = None
++
++    def __len__(self):
++        return 7
++
++
++class _BaseRandomLikeSampler:
++    total_samples = 17
++    last_batch_size = 1
++    micro_batch_times_data_parallel_size = 4
++
++
++class _BaseRandomDataLoader:
++    batch_sampler = _BaseRandomLikeSampler()
++
++    def __len__(self):
++        return 17
++
++
++def test_standard_dataloader_length_is_already_micro_batches():
++    assert epoch_schedule.get_epoch_micro_batches(_StandardDataLoader()) == (7, None)
++
++
++def test_base_random_sampler_length_is_normalized_and_dropped_tail_excluded():
++    assert epoch_schedule.get_epoch_micro_batches(_BaseRandomDataLoader()) == (4, 16)
++
++
++def test_epoch_mode_resolves_total_and_checkpoint_iterations():
++    train_iters, save_iterations = epoch_schedule.resolve_epoch_schedule(
++        micro_batches_per_epoch=10,
++        gradient_accumulation_steps=1,
++        train_epochs=3,
++        save_interval_epochs=2,
++    )
++
++    assert train_iters == 30
++    assert save_iterations == [20]
++
++
++def test_epoch_boundaries_do_not_drift_for_non_divisible_dataset():
++    train_iters, save_iterations = epoch_schedule.resolve_epoch_schedule(
++        micro_batches_per_epoch=85,
++        gradient_accumulation_steps=8,
++        train_epochs=5,
++        save_interval_epochs=1,
++    )
++
++    assert train_iters == 54
++    assert save_iterations == [11, 22, 32, 43, 54]
++
++
++def test_large_non_divisible_dataset_schedule():
++    train_iters, save_iterations = epoch_schedule.resolve_epoch_schedule(
++        micro_batches_per_epoch=1951,
++        gradient_accumulation_steps=8,
++        train_epochs=4,
++        save_interval_epochs=1,
++    )
++
++    assert train_iters == 976
++    assert save_iterations == [244, 488, 732, 976]
++
++
++def test_zero_save_interval_disables_periodic_epoch_saves():
++    train_iters, save_iterations = epoch_schedule.resolve_epoch_schedule(
++        micro_batches_per_epoch=10,
++        gradient_accumulation_steps=1,
++        train_epochs=3,
++        save_interval_epochs=0,
++    )
++
++    assert train_iters == 30
++    assert save_iterations == []
++
++
++@pytest.mark.parametrize(
++    "kwargs,error",
++    [
++        ({"train_epochs": 0}, "train_epochs must be a positive integer"),
++        ({"train_epochs": -1}, "train_epochs must be a positive integer"),
++        ({"save_interval_epochs": -1}, "save_interval must be >= 0"),
++        ({"micro_batches_per_epoch": 0}, "micro_batches_per_epoch must be a positive integer"),
++        ({"gradient_accumulation_steps": 0}, "gradient_accumulation_steps must be a positive integer"),
++        ({"micro_batches_per_epoch": 7}, "smaller than gradient_accumulation_steps"),
++    ],
++)
++def test_invalid_epoch_settings_are_rejected(kwargs, error):
++    settings = {
++        "micro_batches_per_epoch": 10,
++        "gradient_accumulation_steps": 8,
++        "train_epochs": 3,
++        "save_interval_epochs": 1,
++    }
++    settings.update(kwargs)
++
++    with pytest.raises(ValueError, match=error):
++        epoch_schedule.resolve_epoch_schedule(**settings)
++
++
++def test_checkpoint_due_uses_resolved_epoch_schedule():
++    save_iterations = {11, 22, 32, 43, 54}
++
++    assert not epoch_schedule.checkpoint_is_due(10, 1, save_iterations)
++    assert epoch_schedule.checkpoint_is_due(11, 1, save_iterations)
++    assert not epoch_schedule.checkpoint_is_due(12, 1, save_iterations)
++
++
++def test_checkpoint_due_keeps_iteration_mode_semantics():
++    assert not epoch_schedule.checkpoint_is_due(299, 300)
++    assert epoch_schedule.checkpoint_is_due(300, 300)
++    assert not epoch_schedule.checkpoint_is_due(300, 0)
+diff --git a/tests/ut_fsdp/test_qwen2vl_dataset.py b/tests/ut_fsdp/test_qwen2vl_dataset.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..352b4654894806ce3310d0b9e0c16f9596b6d699
+--- /dev/null
++++ b/tests/ut_fsdp/test_qwen2vl_dataset.py
+@@ -0,0 +1,156 @@
++from contextlib import nullcontext
++
++import pytest
++
++from mindspeed_mm.fsdp.data.data_utils.func_utils.convert import DataArguments
++from mindspeed_mm.fsdp.data.datasets.huggingface import qwen2vl_dataset
++from mindspeed_mm.fsdp.data.datasets.huggingface.qwen2vl_dataset import _maybe_shuffle_before_packing
++
++
++class _ShuffleSpyDataset:
++    def __init__(self):
++        self.calls = []
++        self.shuffled = object()
++
++    def shuffle(self, **kwargs):
++        self.calls.append(kwargs)
++        return self.shuffled
++
++
++def test_shuffle_before_packing_defaults_preserve_existing_behavior():
++    data_args = DataArguments()
++
++    assert data_args.shuffle_before_packing is False
++    assert data_args.shuffle_before_packing_seed == 42
++
++    dataset = _ShuffleSpyDataset()
++    assert _maybe_shuffle_before_packing(dataset, data_args) is dataset
++    assert dataset.calls == []
++
++
++def test_shuffle_before_packing_uses_configured_seed_and_cache_policy():
++    data_args = DataArguments(
++        packing=True,
++        shuffle_before_packing=True,
++        shuffle_before_packing_seed=1234,
++    )
++    dataset = _ShuffleSpyDataset()
++
++    result = _maybe_shuffle_before_packing(dataset, data_args, load_from_cache_file=False)
++
++    assert result is dataset.shuffled
++    assert dataset.calls == [{"seed": 1234, "load_from_cache_file": False}]
++
++
++@pytest.mark.parametrize(
++    ("stage", "packing"),
++    [
++        ("sft", False),
++        ("pretrain", True),
++        ("rm", True),
++    ],
++)
++def test_shuffle_before_packing_only_applies_to_sft_packing(stage, packing):
++    data_args = DataArguments(
++        stage=stage,
++        packing=packing,
++        shuffle_before_packing=True,
++    )
++    dataset = _ShuffleSpyDataset()
++
++    assert _maybe_shuffle_before_packing(dataset, data_args) is dataset
++    assert dataset.calls == []
++
++
++def test_shuffle_before_packing_rejects_streaming_dataset():
++    data_args = DataArguments(
++        packing=True,
++        streaming=True,
++        shuffle_before_packing=True,
++    )
++
++    with pytest.raises(ValueError, match="requires a non-streaming dataset"):
++        _maybe_shuffle_before_packing(_ShuffleSpyDataset(), data_args)
++
++
++def test_shuffle_before_packing_rejects_on_the_fly_preprocessing():
++    data_args = DataArguments(
++        packing=True,
++        preprocess_on_fly=True,
++        shuffle_before_packing=True,
++    )
++
++    with pytest.raises(ValueError, match="requires offline preprocessing"):
++        _maybe_shuffle_before_packing(_ShuffleSpyDataset(), data_args)
++
++
++def test_dataset_is_aligned_then_shuffled_before_packing_map(monkeypatch):
++    events = []
++
++    class _Dataset:
++        def __init__(self, name):
++            self.name = name
++
++        def __iter__(self):
++            yield {"_prompt": []}
++
++        def shuffle(self, **kwargs):
++            events.append(("shuffle", self.name, kwargs["seed"]))
++            return shuffled_dataset
++
++        def map(self, *args, **kwargs):
++            events.append(("map", self.name))
++            return self
++
++    class _TrainingArguments:
++        def __init__(self, **kwargs):
++            pass
++
++        def main_process_first(self, **kwargs):
++            return nullcontext()
++
++    raw_dataset = _Dataset("raw")
++    aligned_dataset = _Dataset("aligned")
++    shuffled_dataset = _Dataset("shuffled")
++
++    monkeypatch.setattr(qwen2vl_dataset, "TrainingArguments", _TrainingArguments)
++    monkeypatch.setattr(qwen2vl_dataset, "load_dataset", lambda **kwargs: raw_dataset)
++    monkeypatch.setattr(
++        qwen2vl_dataset,
++        "load_tokenizer",
++        lambda process_args: {"tokenizer": object(), "processor": None},
++    )
++    monkeypatch.setattr(
++        qwen2vl_dataset,
++        "get_template_and_fix_tokenizer",
++        lambda tokenizer, template: object(),
++    )
++
++    def _align(dataset, dataset_attr, data_args):
++        events.append(("align", dataset.name))
++        return aligned_dataset
++
++    monkeypatch.setattr(qwen2vl_dataset, "align_dataset", _align)
++    monkeypatch.setattr(qwen2vl_dataset.torch.distributed, "is_initialized", lambda: False)
++
++    import multiprocess
++
++    monkeypatch.setattr(multiprocess, "get_start_method", lambda allow_none=True: "spawn")
++
++    result = qwen2vl_dataset.get_qwen2vl_dataset(
++        basic_param={
++            "dataset": "dummy.json",
++            "packing": True,
++            "shuffle_before_packing": True,
++            "shuffle_before_packing_seed": 137,
++        },
++        preprocess_param={},
++        dataset_param={"attr": {}},
++    )
++
++    assert result is shuffled_dataset
++    assert events == [
++        ("align", "raw"),
++        ("shuffle", "aligned", 137),
++        ("map", "shuffled"),
++    ]
+diff --git a/tests/ut_fsdp/train/test_trainer_meta_lora.py b/tests/ut_fsdp/train/test_trainer_meta_lora.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c343485d4fad36c2725523c51bd7adf7a4787517
+--- /dev/null
++++ b/tests/ut_fsdp/train/test_trainer_meta_lora.py
+@@ -0,0 +1,84 @@
++from types import SimpleNamespace
++
++import torch.nn as nn
++
++import mindspeed_mm.fsdp.train.trainer as trainer_module
++from mindspeed_mm.fsdp.train.trainer import Trainer
++
++
++class _FeaturesApplier:
++    def pre_fully_shard_apply(self, model):
++        return model
++
++    def post_fully_shard_apply(self, model):
++        return model
++
++
++class _LoraWeightManager:
++    def __init__(self, model):
++        self.model = model
++
++    def verify_lora_weights(self):
++        return True
++
++
++def _trainer(load):
++    instance = object.__new__(Trainer)
++    instance.args = SimpleNamespace(
++        parallel=SimpleNamespace(
++            fsdp_plan=SimpleNamespace(cpu_offload=False),
++        ),
++        training=SimpleNamespace(
++            init_model_with_meta_device=True,
++            load=load,
++            load_rank0_and_broadcast=False,
++            lora=SimpleNamespace(
++                enable=True,
++                init_lora_weights=True,
++            ),
++        ),
++    )
++    model = nn.Linear(2, 2)
++    instance.get_foundation_model = lambda: model
++    instance.enable_lora = lambda current_model: current_model
++    instance.model_features_applier = _FeaturesApplier()
++    instance.model_parallel_applier = lambda current_model: current_model
++    return instance
++
++
++def _patch_initializers(monkeypatch, calls):
++    monkeypatch.setattr(trainer_module, "get_device_type", lambda: "cpu")
++    monkeypatch.setattr(
++        trainer_module,
++        "to_empty_if_needed",
++        lambda model, device: calls.append("materialize"),
++    )
++    monkeypatch.setattr(
++        trainer_module,
++        "init_model_weights",
++        lambda model: calls.append("base_init"),
++    )
++    monkeypatch.setattr(
++        trainer_module,
++        "initialize_lora_weights_after_materialization",
++        lambda model, method: calls.append(("lora_init", method)),
++    )
++    monkeypatch.setattr(trainer_module, "LoraWeightManager", _LoraWeightManager)
++
++
++def test_meta_lora_with_checkpoint_reinitializes_adapters_last(monkeypatch):
++    calls = []
++    _patch_initializers(monkeypatch, calls)
++
++    _trainer(load="/checkpoint").get_model()
++
++    assert calls == ["materialize", "base_init", ("lora_init", True)]
++
++
++def test_meta_lora_without_checkpoint_reinitializes_adapters_last(monkeypatch):
++    calls = []
++    _patch_initializers(monkeypatch, calls)
++
++    _trainer(load=None).get_model()
++
++    assert calls == ["materialize", "base_init", ("lora_init", True)]
