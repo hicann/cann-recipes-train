@@ -265,3 +265,36 @@ bash run_train_dsv4_flash_A5_BF16_pretrain.sh
 ```shell
 bash run_train_dsv4_flash_A5_MXFP8_pretrain.sh
 ```
+
+## DeepSeek-V4-Flash A5 HiF8 低精度训练
+
+在昇腾 Ascend 950上，基于 `torchtitan_npu/experiments/ao_npu/` 的 ParamSwap 参数级量化后端，对 `DeepSeek-V4-Flash` 单机裁剪模型（43 层，路由专家由 256 裁剪为 16）跑单机 8 卡 HiF8 低精度预训练，其中 MatMul（MM）与 Grouped MatMul（GMM）走 **per-tensor 动态量化 + `npu_quant_matmul`** 的真实低精度计算路径。样例脚本默认随机初始化、跑 10 step 并采集 profiling，用于打通与性能观测。
+
+### 数据与 tokenizer
+
+- 数据集：默认使用 `torchtitan-npu` 自带的 `c4_test`（`tests/assets/c4_test`）。
+- tokenizer：`HF_ASSETS_PATH` 指向前文已下载的 `/data/models/DeepSeek-V4-Flash` 目录即可（需包含 `tokenizer.json` 与 `tokenizer_config.json`），本样例默认随机初始化，无需权重转换。
+
+### 启动训练
+
+下载 torchtitan-npu：
+
+```shell
+git clone https://gitcode.com/cann/torchtitan-npu.git
+cd torchtitan-npu
+git checkout deprecated_master_260831
+```
+
+将 HiF8 样例脚本拷贝至 `torchtitan-npu` 的 `scripts` 目录：
+
+```shell
+cd ..
+cp ./cann-recipes-train/llm_pretrain/deepseekv4/run_train_dsv4_flash_A5_HiF8_single_node.sh ./torchtitan-npu/scripts
+```
+
+进入 `torchtitan-npu` 源码根目录后执行：
+
+```shell
+cd torchtitan-npu
+bash scripts/run_train_dsv4_flash_A5_HiF8_single_node.sh
+```
