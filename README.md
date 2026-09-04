@@ -25,6 +25,8 @@
 ---
 
 ## 🚀 最新动态
+
+- [2026/09] 新增 [Qwen3.6-27B 模型 AscendC 算子生成监督微调支持](llm_sft/qwen36_ascendc/torchtitan/README.md)，包括 [TorchTitan-NPU 样例](llm_sft/qwen36_ascendc/torchtitan/README.md)和 [MindSpeed-MM 样例](llm_sft/qwen36_ascendc/mindspeed-mm/README.md)
 - [2026/08] 新增 [DeepSeek-V4-Flash HiF8 低精度预训练](llm_pretrain/deepseekv4/README.md#deepseek-v4-flash-a5-hif8-%E4%BD%8E%E7%B2%BE%E5%BA%A6%E8%AE%AD%E7%BB%83)样例，在 Atlas A5 上使能单卡 HiF8 低精度预训练
 - [2026/05] 新增 [DeepSeek-V4-Pro 模型续训练支持](llm_pretrain/deepseekv4/README.md)，基于 TorchTitan-NPU + AutoFuse，使能 **训练入图、AutoFuse**
 - [2026/04] 新增 [DeepSeek-V3 MXFP8/HiF8 低精度预训练](llm_pretrain/DeepSeekV3/README.md)样例，在 Atlas A5 上完成 8K 序列低精度预训练复现
@@ -225,6 +227,7 @@ flowchart TB
 | [Qwen3-1.7B TorchTitan-NPU SFT](llm_sft/qwen3_1.7B_torchtitan/README.md) | 单卡 TorchTitan-NPU SFT 样例，支持一站式平台快速启动 |
 | [Qwen3-30B-A3B 医学 SFT](llm_sft/qwen3_30b_a3b/README.md) | 基于 TorchTitan-NPU 的医学领域多卡全参微调与效果评测样例 |
 | [Qwen3.6-27B Ascend C 算子生成](llm_sft/qwen36_ascendc/torchtitan/README.md) | 基于 TorchTitan-NPU 的 8 卡 910C（16 die）、CP8 × FSDP2 全参数监督微调样例 |
+| [Qwen3.6-27B Ascend C 算子生成](llm_sft/qwen36_ascendc/mindspeed-mm/README.md) | 基于 MindSpeed-MM 的 8 卡 910C（16 die）、CP8 × FSDP2 全参数及 LoRA 监督微调样例 |
 
 #### 强化学习训练
 
