@@ -46,8 +46,12 @@ Atlas A2/A3 系列产品，单机八卡
 │   └── verl                                              # 修改补丁总目录
 │       └── 0001-verl-feature-improve_rl_usability.patch  # verl支持Code RL的补充性修改
 ├── figures                                               # 图表目录
-│   ├── reward.png                                        # 训练奖励值折线图
-│   └── training_progress.png                             # 训练进度折线图
+│   ├── reward_deepseek_r1_distill_qwen_1_5b.png          # DeepSeek-R1-Distill-Qwen-1.5B 训练奖励
+│   ├── training_progress_deepseek_r1_distill_qwen_1_5b.png  # DeepSeek-R1-Distill-Qwen-1.5B 训练进度
+│   ├── reward_qwen3_4b.png                               # Qwen3-4B 训练奖励
+│   ├── training_progress_qwen3_4b.png                    # Qwen3-4B 训练进度
+│   ├── reward_qwen3_30b_a3b.png                          # Qwen3-30B-A3B 训练奖励
+│   └── training_progress_qwen3_30b_a3b.png               # Qwen3-30B-A3B 训练进度
 ├── verl.Dockerfile                                       # 环境部署文件
 ├── verl_sandbox.Dockerfile                               # 环境部署文件
 ├── build_dataset.py                                      # 示例训练数据集构建脚本
