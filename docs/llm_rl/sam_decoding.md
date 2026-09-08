@@ -64,14 +64,14 @@ SAM（suffix automaton，后缀自动机）是一个能够高效解决许多字�
 下表总结了这三种方法在草稿生成机制、架构需求及适用场景上的核心差异：
 
 <table>
-    <thread>
+    <thead>
         <tr>
             <th> 特性/算法 </th>
             <th style="width: 30%;"> SAM </th>
             <th style="width: 30%;"> EAGLE-3 </th>
             <th style="width: 30%;"> MTP </th>
         </tr>
-    </thread>
+    </thead>
     <tbody>
         <tr>
             <td> 草稿生成方式 </td>
@@ -84,7 +84,7 @@ SAM（suffix automaton，后缀自动机）是一个能够高效解决许多字�
             <td> 无额外模型参数；如果使用冷启动需要一个额外的语料库。</td>
             <td> 需要训练一个依附于主模型的极小网络（参数量通常 &lt;1%）。采用训练时模拟测试 (Training-time Test)——在训练中直接模拟推理时的“猜测-验证”过程，消除训练与推理的偏差，让 draft 模型输出与主模型的更加一致。</td>
             <td> 在模型结构里加入多 token 预测头 (multi-token heads)，这些预测头一次预测多个未来 token 作为草稿。</td>
-        <tr>
+        </tr>
         <tr>
             <td> 部署成本/难度 </td>
             <td> 较低：即插即用，无需对模型进行任何微调或附加训练。主要挑战在于工程上高效实现自动机的数据结构；如果使用冷启动则需要一个覆盖面好的语料库。</td>
