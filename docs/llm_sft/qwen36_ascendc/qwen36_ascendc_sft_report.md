@@ -464,8 +464,6 @@ flowchart LR
 
 ## 7. 现有问题与局限
 
-> 本章只保留有实际观察或证据的问题，每项说明现象、影响范围和当前缓解方式。
-
 ### 7.1 thinking 能力训练
 
 目前训练数据不包含思维链，评测时开启 thinking 就会有训练和推理设置不一致的问题，可能造成训练效果下降。但为了后续 RL/Agentic RL 的训练效果，thinking 是必须开启的。所以我们尝试补充了 thinking 数据，训练后模型能够遵循思维链的格式，但评测结果不佳，仍需进一步补充数据和实验。
@@ -500,15 +498,17 @@ flowchart LR
 
 ### 8.1 全参数 SFT 实验
 
-开放数据合计 550 条样本，训练过程的 loss 曲线图和 grad norm 曲线图如下所示：
+开放数据合计 550 条样本，TorchTitan和MindSpeed-MM各自的训练过程如下所示：
 
-![图 8a　仅使用开放数据训练的 loss 曲线](figure/sft-open-data-loss.png)
+![图 8a　TorchTitan 仅使用开放数据训练的 loss 曲线](figure/torchtitan_opendata.png)
 
-<p align="center"><strong>图 8a　仅使用开放数据训练的 loss 曲线。</strong> 浅色线为逐 iteration 原始 loss，深色线为 15-step 移动平均；虚线标记 epoch checkpoint 边界。</p>
+<p align="center"><strong>图 8a　TorchTitan 仅使用开放数据训练的 loss/grad_norm 曲线。</strong> 灰色竖线标记 epoch checkpoint 边界。</p>
 
-![图 8b　仅使用开放数据训练的 grad norm 曲线](figure/sft-open-data-grad-norm.png)
+![图 8b(a)　MindSpeed-MM 仅使用开放数据训练的 loss 曲线](figure/sft-open-data-loss.png)
 
-<p align="center"><strong>图 8b　仅使用开放数据训练的 grad norm 曲线。</strong> 纵轴使用对数尺度；浅色线为原始梯度范数，深色线为 15-step 移动平均，虚线标记 epoch checkpoint 边界。</p>
+![图 8b(b)　MindSpeed-MM 仅使用开放数据训练的 gradnorm 曲线](figure/sft-open-data-grad-norm.png)
+
+<p align="center"><strong>图 8b　MindSpeed-MM 仅使用开放数据训练的 loss/grad_norm 曲线。</strong> 浅色线为逐 iteration 原始 loss，深色线为 15-step 移动平均；虚线标记 epoch checkpoint 边界。</p>
 
 训练结束后进行五轮生成评测，结果如下。
 
