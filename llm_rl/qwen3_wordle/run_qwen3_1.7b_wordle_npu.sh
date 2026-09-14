@@ -24,6 +24,8 @@ export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 
 # ---- configurable ----
+SEED=${SEED:-42}
+export PYTHONHASHSEED=${PYTHONHASHSEED:-${SEED}}
 MODEL_PATH=${MODEL_PATH:-./models/Qwen3-1.7B-Wordle-SFT}
 TRAIN_FILE=${TRAIN_FILE:-data/wordle_train.parquet}
 TEST_FILE=${TEST_FILE:-data/wordle_test.parquet}
@@ -32,11 +34,12 @@ NGPUS_PER_NODE=${NGPUS_PER_NODE:-2}
 NUM_WORKERS=${NUM_WORKERS:-4}
 
 # Training
-TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-64}
-PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-16}
+TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-128}
+PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-32}
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-1024}
 MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-4096}
 ACTOR_LR=${ACTOR_LR:-1e-6}
+ENTROPY_COEFF=${ENTROPY_COEFF:-0.004}
 MAX_TURNS=${MAX_TURNS:-6}
 ROLLOUT_N=${ROLLOUT_N:-8}
 
@@ -61,6 +64,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.0 \
     data.train_files=${TRAIN_FILE} \
     data.val_files=${TEST_FILE} \
+    data.seed=${SEED} \
     data.return_raw_chat=True \
     data.train_batch_size=${TRAIN_BATCH_SIZE} \
     data.max_prompt_length=${MAX_PROMPT_LENGTH} \
@@ -74,13 +78,13 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.use_torch_compile=False \
     actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.entropy_coeff=0.002 \
+    actor_rollout_ref.actor.entropy_coeff=${ENTROPY_COEFF} \
     actor_rollout_ref.actor.kl_loss_coef=0.001 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.optim.lr=${ACTOR_LR} \
     actor_rollout_ref.actor.optim.lr_scheduler_type=cosine \
     actor_rollout_ref.actor.optim.min_lr_ratio=0.1 \
-    actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.03 \
+    actor_rollout_ref.actor.optim.lr_warmup_steps=5 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=${PPO_MINI_BATCH_SIZE} \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=${ACTOR_MAX_TOKEN} \
@@ -99,6 +103,9 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.agent.default_agent_loop=wordle_agent \
     actor_rollout_ref.rollout.gpu_memory_utilization=${ROLLOUT_GPU_MEM_UTIL} \
     actor_rollout_ref.rollout.n=${ROLLOUT_N} \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.7 \
+    actor_rollout_ref.rollout.val_kwargs.n=5 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     trainer.logger='["console","tensorboard"]' \
     trainer.project_name=${PROJECT_NAME} \
     trainer.experiment_name=${EXPERIMENT_NAME} \

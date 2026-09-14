@@ -1,0 +1,27 @@
+diff --git a/csrc/build_aclnn.sh b/csrc/build_aclnn.sh
+--- a/csrc/build_aclnn.sh
++++ b/csrc/build_aclnn.sh
+@@ -63,9 +63,19 @@ elif [[ "$SOC_VERSION" == "Ascend910_93" ]]; then
+     cp "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR"
+     cp "$HCCL_STRUCT_FILE_PATH" "$TARGET_DIR_BF16"
+
++    # Newer CANN versions split communication definitions into a companion
++    # header. Copy it alongside each copy of moe_distribute_base.h.
++    HCCL_COMM_FILE_PATH="$(dirname "$HCCL_STRUCT_FILE_PATH")/moe_distribute_comm_ctx.h"
++    if [[ -f "$HCCL_COMM_FILE_PATH" ]]; then
++        for destination in "$ROOT_DIR/csrc/utils/inc/kernel" \
++            "$TARGET_DIR" "$TARGET_DIR_BF16"; do
++            cp "$HCCL_COMM_FILE_PATH" "$destination"
++        done
++    fi
++
+-    sed -i 's/struct HcclOpResParam {/struct HcclOpResParamCustom {/g' "$TARGET_FILE"
+-    sed -i 's/struct HcclRankRelationResV2 {/struct HcclRankRelationResV2Custom {/g' "$TARGET_FILE"
+-    sed -i 's/struct HcclOpResParam {/struct HcclOpResParamCustom {/g' "$TARGET_FILE_BF16"
+-    sed -i 's/struct HcclRankRelationResV2 {/struct HcclRankRelationResV2Custom {/g' "$TARGET_FILE_BF16"
++    sed -i 's/\<HcclOpResParam\>/HcclOpResParamCustom/g' "$TARGET_FILE"
++    sed -i 's/\<HcclRankRelationResV2\>/HcclRankRelationResV2Custom/g' "$TARGET_FILE"
++    sed -i 's/\<HcclOpResParam\>/HcclOpResParamCustom/g' "$TARGET_FILE_BF16"
++    sed -i 's/\<HcclRankRelationResV2\>/HcclRankRelationResV2Custom/g' "$TARGET_FILE_BF16"
+
+     CUSTOM_OPS_ARRAY=(

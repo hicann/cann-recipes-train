@@ -1,0 +1,31 @@
+diff --git a/torchtitan/models/qwen3/__init__.py b/torchtitan/models/qwen3/__init__.py
+--- a/torchtitan/models/qwen3/__init__.py
++++ b/torchtitan/models/qwen3/__init__.py
+@@ -325,26 +325,26 @@
+ def _1_7b() -> Qwen3Model.Config:
+     dim = 2048
+     head_dim = 128
+     n_layers = 28
+     vocab_size = 151936
+     return Qwen3Model.Config(
+         vocab_size=vocab_size,
+         dim=dim,
+         norm=_qwen3_norm(dim),
+         enable_weight_tying=True,
+         tok_embeddings=Embedding.Config(
+             num_embeddings=vocab_size,
+             embedding_dim=dim,
+             param_init=_EMBEDDING_SKIP_INIT,
+         ),
+         output=Linear.Config(
+             in_features=dim,
+             out_features=vocab_size,
+             param_init=_output_linear_init(dim),
+         ),
+         rope=RoPE.Config(
+             dim=head_dim,
+-            max_seq_len=4096,
++            max_seq_len=5120,
+             theta=1000000.0,
+             backend="cos_sin",
+         ),

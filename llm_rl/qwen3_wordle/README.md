@@ -46,6 +46,7 @@ llm_rl/qwen3_wordle/
 ├── prepare_data.py                      # 数据生成脚本
 ├── wordle_reward.py                     # 奖励函数
 ├── run_qwen3_1.7b_wordle_npu.sh         # 训练启动脚本
+├── torchtitan-npu/                   # TorchTitan-NPU 训练后端
 ├── patches/
 │   └── 0001-wordle-agent-loop.patch     # verl 补丁
 ├── data/                                # 第 4 步生成
@@ -134,6 +135,10 @@ cd verl && git apply ../patches/0001-wordle-agent-loop.patch && cd ..
 bash run_qwen3_1.7b_wordle_npu.sh
 ```
 
+如需将 Actor 和 Reference Model 的训练引擎切换为 TorchTitan-NPU，
+请按照 [torchtitan-npu/README.md](torchtitan-npu/README.md) 准备隔离环境并启动训练。
+模型、数据、奖励函数、GRPO 算法和 vLLM rollout 配置保持不变。
+
 ## 训练过程可视化
 
 训练过程中使用 TensorBoard 记录关键指标（reward、entropy、kl_loss 等），TensorBoard 的基础使用方法参考 [qwen2_5/verl_npu_demo README 中的 TensorBoard 部分](../qwen2_5/verl_npu_demo/README.md#tensorboard)。
@@ -154,27 +159,33 @@ bash run_qwen3_1.7b_wordle_npu.sh
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `MODEL_PATH` | `./models/Qwen3-1.7B-Wordle-SFT` | SFT 模型权重路径 |
-| `TRAIN_BATCH_SIZE` | 64 | 训练 batch size |
+| `TRAIN_BATCH_SIZE` | 128 | 训练 batch size |
 | `MAX_PROMPT_LENGTH` | 1024 | prompt 最大 token |
 | `MAX_RESPONSE_LENGTH` | 4096 | response 最大 token |
 | `ROLLOUT_N` | 8 | 每个 prompt 的并行 rollout 数 |
 | `MAX_TURNS` | 6 | Wordle 最大猜词轮次 |
 | `ACTOR_LR` | 1e-6 | Actor 学习率 |
+| `ENTROPY_COEFF` | 0.004 | 熵奖励系数，可通过短程实验调节 |
 | `NGPUS_PER_NODE` | 2 | 训练卡数 |
 | `ROLLOUT_TP` | 2 | vLLM tensor parallel |
 
-脚本内置的关键超参（如需修改请编辑脚本）：
+脚本使用的其他关键超参：
 
 | 超参 | 值 | 说明 |
 |------|-----|------|
-| `entropy_coeff` | 0.002 | 熵奖励系数，维持探索，过低易崩塌，过高易发散 |
 | `kl_loss_coef` | 0.001 | KL 散度损失系数，约束策略漂移 |
 | `kl_loss_type` | low_var_kl | 低方差 KL，数值更稳定 |
 | `lr_scheduler_type` | cosine | 余弦退火，防止后期过更新 |
 | `min_lr_ratio` | 0.1 | 余弦退火终点的 LR 比例 |
-| `lr_warmup_steps_ratio` | 0.03 | LR 热身步数占比 |
+| `lr_warmup_steps` | 5 | LR 热身步数 |
 | `total_epochs` | 5 | 训练总轮数 |
 | `save_freq` | 25 | checkpoint 保存间隔（步） |
+
+正式训练前，建议先运行 25～30 步观察 entropy、KL、验证集 correct 和输出长度。entropy 持续上升且 correct 不涨时下调 `ENTROPY_COEFF`；entropy 快速下降且 correct、输出长度同步恶化时，检查学习率和 KL，并小幅上调 `ENTROPY_COEFF`。调参时保持其他参数不变，例如：
+
+```bash
+ENTROPY_COEFF=0.003 bash run_qwen3_1.7b_wordle_npu.sh
+```
 
 ## 奖励函数
 
@@ -207,21 +218,18 @@ Qwen3-1.7B Wordle RL, 2×Ascend 910C：
 
 | 指标 | 参考值 |
 |------|--------|
-| 单步耗时 | ~250s |
-| Reward | 0.82 → 1.20 (155 步) |
-| correct | 15% → 70% (155 步) |
+| 单步耗时 | ~350s |
+| Reward | 0.852 → 1.156（75 步）|
+| correct | 19% → 55%（75 步）|
 
-训练曲线（TensorBoard）：
-
-![reward](../../docs/llm_rl/figures/qwen3_wordle_figures/rewards.png)
-![correct](../../docs/llm_rl/figures/qwen3_wordle_figures/correct.png)
-![entropy](../../docs/llm_rl/figures/qwen3_wordle_figures/entropy.png)
+验证集包含 20 个测试词，每个词采样 5 次（`temperature=0.7`、`n=5`），共 100 条 rollout。猜中率记录为 `val-core/wordle/correct/mean@5`，总奖励记录为 `val-aux/wordle/reward/mean@5`。采样结果存在波动，选择 checkpoint 时应观察多次验证的整体趋势。
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
 | `run_qwen3_1.7b_wordle_npu.sh` | NPU 训练启动脚本 |
+| `torchtitan-npu/` | TorchTitan-NPU 后端的安装、适配和训练启动文件 |
 | `wordle_reward.py` | 自定义奖励函数 (correct + partial + length + format) |
 | `prepare_data.py` | 从 TextArena Wordle-v0 词表生成训练/测试数据 |
 | `patches/0001-wordle-agent-loop.patch` | Wordle Agent Loop 补丁（应用到 verl 源码） |

@@ -1,0 +1,12 @@
+.runtime/
+.venv/
+runtime_sources/
+checkpoint/
+logs/
+tensorboard_log/
+outputs/
+.static_kernel_records.json
+__pycache__/
+*.py[cod]
+# Keep verl patches tracked despite the parent directory's verl/ ignore rule.
+!patches/verl/

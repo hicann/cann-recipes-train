@@ -1,0 +1,68 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9e3564e3..879318c4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -22,9 +22,9 @@ find_package(Torch REQUIRED)
+-
++
+ run_python(TORCH_VERSION
+   "import torch; print(torch.__version__)" "Failed to locate torch path")
+-# check torch version is 2.9.0
+-if(NOT ${TORCH_VERSION} VERSION_EQUAL "2.9.0")
+-  message(FATAL_ERROR "Expected PyTorch version 2.9.0, but found ${TORCH_VERSION}")
++# check torch version is 2.12.0
++if(NOT ${TORCH_VERSION} VERSION_EQUAL "2.12.0")
++  message(FATAL_ERROR "Expected PyTorch version 2.12.0, but found ${TORCH_VERSION}")
+ endif()
+-
++
+ set(RUN_MODE "npu" CACHE STRING "cpu/sim/npu")
+diff --git a/pyproject.toml b/pyproject.toml
+index 061db046..e91a4bac 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -18,8 +18,8 @@ requires = [
+     "setuptools>=64",
+     "setuptools-scm>=8",
+     "transformers>=4.57.4",
+-    "torch-npu==2.9.0",
+-    "torch==2.9.0",
++    "torch-npu==2.12.0rc1",
++    "torch==2.12.0",
+     "torchvision",
+     "wheel",
+     "msgpack",
+@@ -30,6 +30,6 @@ requires = [
+     "opencv-python-headless<=4.11.0.86", # Required to avoid numpy version conflict with vllm
+     "compressed_tensors>=0.11.0",
+     "arctic-inference==0.1.1",
+-    "triton-ascend==3.2.0"
++    "triton-ascend==3.2.1"
+ ]
+ build-backend = "setuptools.build_meta"
+diff --git a/requirements.txt b/requirements.txt
+index b307c62e..90eb9295 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -12,7 +12,6 @@ pandas
+ psutil
+ setuptools>=64
+ setuptools-scm>=8
+-torch==2.9.0
++torch==2.12.0
+ torchvision
+-torchaudio
+ wheel
+@@ -31,9 +31,9 @@ numba
+ # Install torch_npu
+ #--pre
+ #--extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+-torch-npu==2.9.0
++torch-npu==2.12.0rc1
+-
++
+ arctic-inference==0.1.1
+ transformers>=4.57.4
+ fastapi<0.124.0
+-triton-ascend==3.2.0
++triton-ascend==3.2.1

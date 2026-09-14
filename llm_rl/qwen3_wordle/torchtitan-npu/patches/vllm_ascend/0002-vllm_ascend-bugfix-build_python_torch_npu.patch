@@ -1,0 +1,20 @@
+diff --git a/setup.py b/setup.py
+index 67c02eb4..03232f00 100644
+--- a/setup.py
++++ b/setup.py
+@@ -308,6 +308,12 @@ class cmake_build_ext(build_ext):
+-        torch_npu_command = "python3 -m pip show torch-npu | grep '^Location:' | awk '{print $2}'"
++        torch_npu_command = [
++            sys.executable,
++            "-c",
++            "import pathlib, torch_npu; "
++            "print(pathlib.Path(torch_npu.__file__).resolve().parent)",
++        ]
+         try:
+-            torch_npu_path = subprocess.check_output(torch_npu_command, shell=True).decode().strip()
+-            torch_npu_path += "/torch_npu"
++            torch_npu_path = subprocess.check_output(
++                torch_npu_command, text=True
++            ).strip()
+         except subprocess.CalledProcessError as e:
+             raise RuntimeError(f"Retrieve torch version version failed: {e}")
