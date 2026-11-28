@@ -29,9 +29,8 @@ def encode_inference_weight(weight):
     if (
         weight.dtype == torch.float32
         and isinstance(weight_config, BlockMXQuantizeConfig)
-        and weight_config.mxfp4_fake_quantize_config is None
     ):
-        # npu_dynamic_block_mx_quant accepts only FP16/BF16 inputs.
+        # Cast to BF16 to match the training forward pass.
         weight = weight.to(torch.bfloat16)
     inference_weight = weight.to_inference_weight()
     qweight = inference_weight.qdata
